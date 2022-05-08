@@ -1,0 +1,9 @@
+dep/*
+obj/*
+iso/files/*
+!iso/files/opening.bnr
+iso/sys/*
+!iso/sys/boot.bin
+!iso/sys/apploader.img
+.vscode
+src/resources

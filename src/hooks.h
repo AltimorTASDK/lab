@@ -1,6 +1,7 @@
 #pragma once
 
 #include "util/preprocessor.h"
+#include <type_traits>
 
 template<typename T>
 struct hook_entry {
@@ -16,7 +17,12 @@ struct hook_entry {
 		[]<typename ret, typename ...args>(ret(*)(args...)) { \
 			return [](args ...va) -> ret { \
 				const auto original = (ret(*)(args...))(&entry); \
-				return __VA_ARGS__(va...); \
+				const auto lambda = __VA_ARGS__; \
+				static_assert(requires { lambda(va...); }, \
+					"Wrong hook parameter types"); \
+				static_assert(std::is_same_v<decltype(lambda(va...)), ret>, \
+					"Wrong hook return type"); \
+				return lambda(va...); \
 			}; \
 		}(function) \
 	}; \

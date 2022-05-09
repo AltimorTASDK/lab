@@ -36,7 +36,7 @@ TOOLS   := ssbm-1.03/tools
 OBJDIR  := obj/DOL
 DEPDIR  := dep
 GENDIR  := gen
-SRCDIR  := src $(GENDIR) $(BASEMOD)/src $(BASEMOD)/$(GENDIR)
+SRCDIR  := src $(GENDIR) $(BASEMOD)/src
 
 OUTPUTMAP = $(OBJDIR)/output.map
 LDFLAGS   = -Wl,-Map=$(OUTPUTMAP) -Wl,--gc-sections -flto
@@ -111,7 +111,7 @@ $(OBJDIR)/%.S.o: %.S
 	@[ -d $(subst $(OBJDIR), $(DEPDIR), $(@D)) ] || mkdir -p $(subst $(OBJDIR), $(DEPDIR), $(@D))
 	$(CC) $(ASFLAGS) -c $< -o $@
 
-RESOURCE_DIR_IN  := resources
+RESOURCE_DIR_IN  := resources $(BASEMOD)/resources
 RESOURCE_DIR_OUT := $(GENDIR)/resources
 RESOURCES        := $(foreach dir, $(RESOURCE_DIR_IN), $(shell find $(dir) -type f))
 RESOURCES        := $(filter-out %.docx, $(filter-out %.psd, $(RESOURCES)))
@@ -119,7 +119,7 @@ TEXTURES         := $(filter     %.png,  $(RESOURCES))
 RESOURCES        := $(filter-out %.png,  $(RESOURCES))
 
 define get_resource_out
-$(subst $(RESOURCE_DIR_IN), $(RESOURCE_DIR_OUT), $1)
+$(RESOURCE_DIR_OUT)/$(shell echo $1 | sed -r "s/(^|.*[/\\])resources[/\\](.*)/\\2/")
 endef
 
 define get_texture_out
@@ -142,15 +142,14 @@ RESOURCES_OUT    := $(foreach resource, $(RESOURCES), $(call get_resource_out, $
                     $(foreach texture,  $(TEXTURES),  $(call get_texture_out,  $(texture)))
 RESOURCE_HEADERS := $(RESOURCES_OUT:%=%.h)
 
-$(foreach resource, $(RESOURCES),     $(eval $(call make_resource_rule, $(resource))))
-$(foreach texture,  $(TEXTURES),      $(eval $(call make_texture_rule,  $(texture))))
+$(foreach resource, $(RESOURCES), $(eval $(call make_resource_rule, $(resource))))
+$(foreach texture,  $(TEXTURES),  $(eval $(call make_texture_rule,  $(texture))))
 
 $(RESOURCE_DIR_OUT)/%.h: $(RESOURCE_DIR_OUT)/% $(TOOLS)/bin_to_header.py
 	python $(TOOLS)/bin_to_header.py $< $@
 
 .PHONY: resources
-resources: | $(RESOURCE_HEADERS)
-	+@cd ssbm-1.03 && $(MAKE) resources
+resources: $(RESOURCE_HEADERS)
 
 .PHONY: clean
 clean:

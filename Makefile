@@ -10,7 +10,7 @@ CXX     := powerpc-eabi-g++
 OBJCOPY := powerpc-eabi-objcopy
 
 DEFINES := $(foreach def, $(USERDEFS), -D$(def))
-DEFINES += -DGEKKO -DNOPAL -DDOL
+DEFINES += -DGEKKO -DNOPAL -DDOL -DUCF_TOGGLE
 
 ifdef MODVERSION
 ifneq ($(shell echo "$(MODVERSION)" | grep -P '(^|-)(beta|rc)($$|[\d-])'),)

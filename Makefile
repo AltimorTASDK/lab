@@ -33,7 +33,7 @@ MELEELD := ssbm-1.03/GALE01r2.ld
 BINDIR  := bin
 ISODIR  := iso
 TOOLS   := ssbm-1.03/tools
-OBJDIR  := obj
+OBJDIR  := obj/DOL
 DEPDIR  := dep
 GENDIR  := gen
 SRCDIR  := src $(GENDIR) $(BASEMOD)/src $(BASEMOD)/$(GENDIR)
@@ -55,7 +55,7 @@ INCLUDE  := $(foreach dir, $(SRCDIR), -I$(dir)) -I$(DEVKITPATH)/libogc/include
 DOLFILE := $(ISODIR)/sys/main.dol
 PATCHES := $(BINDIR)/patches.bin
 DOLELF  := $(BINDIR)/dol.elf
-DOLDATA := $(OBJDIR)/DOL/dol_data.bin
+DOLDATA := $(OBJDIR)/dol_data.bin
 DOLLD   := $(BASEMOD)/dol.ld
 
 CFILES   := $(foreach dir, $(SRCDIR), $(shell find $(dir) -type f -name '*.c'   2> /dev/null))

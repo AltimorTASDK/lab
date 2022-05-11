@@ -28,6 +28,7 @@ endif
 LIBDIR  := lib
 BASE103 := $(LIBDIR)/ssbm-1.03
 BASEMOD := $(LIBDIR)/ssbm-1.03/src/mod
+IMGUI   := $(LIBDIR)/imgui
 
 VERSION := 102
 DEFINES += -DMODNAME=\"$(MODNAME)\" -DNTSC102
@@ -52,7 +53,7 @@ CFLAGS    = $(DEFINES) -mogc -mcpu=750 -meabi -mhard-float -Os \
             -fno-builtin-sqrt -fno-builtin-sqrtf -flto
 ASFLAGS   = $(DEFINES) -Wa,-mregnames -Wa,-mgekko
 CXXFLAGS  = $(CFLAGS) -std=c++2b -fconcepts -fno-rtti -fno-exceptions
-INCLUDE  := $(foreach dir, $(SRCDIR), -I$(dir)) -I$(DEVKITPATH)/libogc/include
+INCLUDE  := $(foreach dir, $(SRCDIR), -I$(dir)) -I$(DEVKITPATH)/libogc/include -I$(IMGUI)
 
 DOLFILE := $(ISODIR)/sys/main.dol
 PATCHES := $(BINDIR)/patches.bin
@@ -63,6 +64,8 @@ DOLLD   := $(BASEMOD)/dol.ld
 CFILES   := $(foreach dir, $(SRCDIR), $(shell find $(dir) -type f -name '*.c'   2> /dev/null))
 CXXFILES := $(foreach dir, $(SRCDIR), $(shell find $(dir) -type f -name '*.cpp' 2> /dev/null))
 SFILES   := $(foreach dir, $(SRCDIR), $(shell find $(dir) -type f -name '*.S'   2> /dev/null))
+
+CXXFILES += $(IMGUI)/imgui_draw.cpp $(IMGUI)/imgui_tables.cpp $(IMGUI)/imgui_widgets.cpp $(IMGUI)/imgui.cpp
 
 OBJFILES := \
 	$(patsubst %, $(OBJDIR)/%.o, $(CFILES)) \
@@ -129,23 +132,27 @@ $(shell echo $(call get_resource_out, $1) | sed -r "s/((.*)(\\.[^./\]*)|(.*))\\.
 endef
 
 define make_resource_rule
-$(call get_resource_out, $1): $1
+_OUT := $(call get_resource_out, $1)
+RESOURCES_OUT += $(_OUT)
+
+$(_OUT): $1
 	@mkdir -p $$(dir $$@)
 	cp $$< $$@
 endef
 
 define make_texture_rule
-$(call get_texture_out, $1): $1 $(TOOLS)/compress_resource.py $(TOOLS)/encode_texture.py
+_OUT := $(call get_texture_out, $1)
+RESOURCES_OUT += $(_OUT)
+
+$(_OUT): $1 $(TOOLS)/compress_resource.py $(TOOLS)/encode_texture.py
 	python $(TOOLS)/encode_texture.py    $$< $$@
 	python $(TOOLS)/compress_resource.py $$@ $$@
 endef
 
-RESOURCES_OUT    := $(foreach resource, $(RESOURCES), $(call get_resource_out, $(resource))) \
-                    $(foreach texture,  $(TEXTURES),  $(call get_texture_out,  $(texture)))
-RESOURCE_HEADERS := $(RESOURCES_OUT:%=%.h)
-
 $(foreach resource, $(RESOURCES), $(eval $(call make_resource_rule, $(resource))))
 $(foreach texture,  $(TEXTURES),  $(eval $(call make_texture_rule,  $(texture))))
+
+RESOURCE_HEADERS := $(RESOURCES_OUT:%=%.h)
 
 $(RESOURCE_DIR_OUT)/%.h: $(RESOURCE_DIR_OUT)/% $(TOOLS)/bin_to_header.py
 	python $(TOOLS)/bin_to_header.py $< $@
@@ -162,12 +169,13 @@ clean:
 clean_unused:
 	$(foreach file, $(shell find $(OBJDIR) -type f 2> /dev/null), \
 		$(if $(filter $(file), $(OBJFILES) $(OUTPUTMAP) $(DOLDATA)),, \
-		rm $(file)))
+		rm $(file);))
 	$(foreach file, $(shell find $(DEPDIR) -type f 2> /dev/null), \
 		$(if $(filter $(file), $(DEPFILES)),, \
-		rm $(file)))
+		rm $(file);))
 	$(foreach file, $(shell find $(RESOURCE_DIR_OUT) -type f 2> /dev/null), \
 		$(if $(filter $(file), $(RESOURCES_OUT) $(RESOURCE_HEADERS)),, \
-		rm $(file)))
+		rm $(file);))
+	echo "RESOURCES_OUT: $(RESOURCES_OUT)"
 
 -include $(DEPFILES)

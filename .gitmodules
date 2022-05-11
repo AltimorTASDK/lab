@@ -1,3 +1,6 @@
 [submodule "lib/ssbm-1.03"]
 	path = lib/ssbm-1.03
 	url = https://github.com/AltimorTASDK/ssbm-1.03.git
+[submodule "lib/imgui"]
+	path = lib/imgui
+	url = https://github.com/ocornut/imgui.git

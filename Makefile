@@ -89,7 +89,7 @@ $(PATCHES): $(DOLELF)
 	@[ -d $(@D) ] || mkdir -p $(@D)
 	$(OBJCOPY) -O binary -j .patches $< $@
 
-$(DOLELF): $(OBJFILES) $(DOLDATA) $(DOLLD) $(MELEELD) $(BASEMOD)/../common.ld | clean_unused
+$(DOLELF): $(OBJFILES) $(DOLDATA) $(DOLLD) $(MELEELD) $(BASEMOD)/../common.ld | clean-unused
 	@[ -d $(@D) ] || mkdir -p $(@D)
 	$(CC) $(LDFLAGS) -T$(DOLLD) -T$(MELEELD) $(OBJFILES) -o $@
 
@@ -116,42 +116,49 @@ $(OBJDIR)/%.S.o: %.S
 	@[ -d $(subst $(OBJDIR), $(DEPDIR), $(@D)) ] || mkdir -p $(subst $(OBJDIR), $(DEPDIR), $(@D))
 	$(CC) $(ASFLAGS) -c $< -o $@
 
+$(OBJDIR)/$(IMGUI)/%.cpp.o: CXXFLAGS += -Wno-conversion
+
 RESOURCE_DIR_IN  := resources $(BASEMOD)/resources
 RESOURCE_DIR_OUT := $(GENDIR)/resources
 RESOURCES        := $(foreach dir, $(RESOURCE_DIR_IN), $(shell find $(dir) -type f))
 RESOURCES        := $(filter-out %.docx, $(filter-out %.psd, $(RESOURCES)))
 TEXTURES         := $(filter     %.png,  $(RESOURCES))
-RESOURCES        := $(filter-out %.png,  $(RESOURCES))
+BIN_RESOURCES    := $(filter-out %.png,  $(RESOURCES))
 
 define get_resource_out
-$(RESOURCE_DIR_OUT)/$(shell echo $1 | sed -r "s/(^|.*[/\\])resources[/\\](.*)/\\2/")
+$(shell printf "%s\n" $1 \
+	| sed -r "s/(^|.*[/\\])resources[/\\](.*)/\\2/" \
+	| awk '{print "$(RESOURCE_DIR_OUT)/" $$0}')
 endef
 
 define get_texture_out
-$(shell echo $(call get_resource_out, $1) | sed -r "s/((.*)(\\.[^./\]*)|(.*))\\.png$$/\\2\\4.tex/")
+$(shell printf "%s\n" $1 \
+	| sed -r "s/(^|.*[/\\])resources[/\\]((.*)(\\.[^./\]*)|(.*))\\.png$$/\\3\\5.tex/" \
+	| awk '{print "$(RESOURCE_DIR_OUT)/" $$0}')
 endef
 
-define make_resource_rule
-_OUT := $(call get_resource_out, $1)
-RESOURCES_OUT += $(_OUT)
-
-$(_OUT): $1
+define make_bin_resource_rule
+in_path  := $(word $1, $(BIN_RESOURCES))
+out_path := $(word $1, $(BIN_RESOURCES_OUT))
+$$(out_path): $$(in_path)
 	@mkdir -p $$(dir $$@)
 	cp $$< $$@
 endef
 
 define make_texture_rule
-_OUT := $(call get_texture_out, $1)
-RESOURCES_OUT += $(_OUT)
-
-$(_OUT): $1 $(TOOLS)/compress_resource.py $(TOOLS)/encode_texture.py
+in_path  := $(word $1, $(TEXTURES))
+out_path := $(word $1, $(TEXTURES_OUT))
+$$(out_path): $$(in_path) $(TOOLS)/compress_resource.py $(TOOLS)/encode_texture.py
 	python $(TOOLS)/encode_texture.py    $$< $$@
 	python $(TOOLS)/compress_resource.py $$@ $$@
 endef
 
-$(foreach resource, $(RESOURCES), $(eval $(call make_resource_rule, $(resource))))
-$(foreach texture,  $(TEXTURES),  $(eval $(call make_texture_rule,  $(texture))))
+BIN_RESOURCES_OUT := $(call get_resource_out, $(BIN_RESOURCES))
+TEXTURES_OUT      := $(call get_texture_out,  $(TEXTURES))
+$(foreach i, $(shell seq 1 $(words $(BIN_RESOURCES))), $(eval $(call make_bin_resource_rule, $(i))))
+$(foreach i, $(shell seq 1 $(words $(TEXTURES))),      $(eval $(call make_texture_rule,      $(i))))
 
+RESOURCES_OUT    := $(BIN_RESOURCES_OUT) $(TEXTURES_OUT)
 RESOURCE_HEADERS := $(RESOURCES_OUT:%=%.h)
 
 $(RESOURCE_DIR_OUT)/%.h: $(RESOURCE_DIR_OUT)/% $(TOOLS)/bin_to_header.py
@@ -165,8 +172,8 @@ clean:
 	rm -rf $(BINDIR) $(OBJDIR) $(DEPDIR) $(RESOURCE_DIR_OUT)
 
 # Remove unused obj/dep/resource files
-.PHONY: clean_unused
-clean_unused:
+.PHONY: clean-unused
+clean-unused:
 	$(foreach file, $(shell find $(OBJDIR) -type f 2> /dev/null), \
 		$(if $(filter $(file), $(OBJFILES) $(OUTPUTMAP) $(DOLDATA)),, \
 		rm $(file);))
@@ -176,6 +183,5 @@ clean_unused:
 	$(foreach file, $(shell find $(RESOURCE_DIR_OUT) -type f 2> /dev/null), \
 		$(if $(filter $(file), $(RESOURCES_OUT) $(RESOURCE_HEADERS)),, \
 		rm $(file);))
-	echo "RESOURCES_OUT: $(RESOURCES_OUT)"
 
 -include $(DEPFILES)

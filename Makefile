@@ -25,14 +25,16 @@ ifdef BETA
 DEFINES += -DBETA
 endif
 
-BASEMOD := ssbm-1.03/src/mod
+LIBDIR  := lib
+BASE103 := $(LIBDIR)/ssbm-1.03
+BASEMOD := $(LIBDIR)/ssbm-1.03/src/mod
 
 VERSION := 102
 DEFINES += -DMODNAME=\"$(MODNAME)\" -DNTSC102
-MELEELD := ssbm-1.03/GALE01r2.ld
+MELEELD := $(BASE103)/GALE01r2.ld
 BINDIR  := bin
 ISODIR  := iso
-TOOLS   := ssbm-1.03/tools
+TOOLS   := $(BASE103)/tools
 OBJDIR  := obj/DOL
 DEPDIR  := dep
 GENDIR  := gen

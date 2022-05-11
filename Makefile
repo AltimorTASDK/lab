@@ -32,12 +32,12 @@ BASEMOD := $(LIBDIR)/ssbm-1.03/src/mod
 VERSION := 102
 DEFINES += -DMODNAME=\"$(MODNAME)\" -DNTSC102
 MELEELD := $(BASE103)/GALE01r2.ld
-BINDIR  := bin
+BINDIR  := build/bin
 ISODIR  := iso
 TOOLS   := $(BASE103)/tools
-OBJDIR  := obj/DOL
-DEPDIR  := dep
-GENDIR  := gen
+OBJDIR  := build/obj/DOL
+DEPDIR  := build/dep
+GENDIR  := build/gen
 SRCDIR  := src $(GENDIR) $(BASEMOD)/src
 
 OUTPUTMAP = $(OBJDIR)/output.map

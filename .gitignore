@@ -1,7 +1,4 @@
-bin/*
-dep/*
-obj/*
-gen/*
+build/*
 iso/files/*
 !iso/files/opening.bnr
 iso/sys/*

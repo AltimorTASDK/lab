@@ -4,7 +4,9 @@
 #include "imgui.h"
 #include "imgui_impl_gx.h"
 #include "os/gx.h"
+#include "util/math.h"
 #include "util/draw/render.h"
+#include <ogc/cache.h>
 #include <ogc/gx.h>
 #include <stdint.h>
 
@@ -60,8 +62,11 @@ void ImGui_ImplGX_NewFrame()
 
 static void ImGui_ImplGX_SetupRenderState()
 {
-	// Set up tev/transforms/scissor
+	// Set up tev/transforms/scissor/fog
 	render_state::get().reset_2d();
+
+	// Disable depth testing
+	GX_SetZMode(GX_FALSE, GX_NEVER, GX_FALSE);
 
 	// Set up vertex attributes
 	GX_ClearVtxDesc();
@@ -90,6 +95,10 @@ void ImGui_ImplGX_RenderDrawData(ImDrawData* draw_data)
 		auto *cmd_list = draw_data->CmdLists[n];
 		auto *vtx_buffer = cmd_list->VtxBuffer.Data;
 		auto *idx_buffer = cmd_list->IdxBuffer.Data;
+
+		// Write vertex data to main memory to be read by GX unit
+		DCStoreRange(vtx_buffer, cmd_list->VtxBuffer.size_in_bytes());
+
 		GX_SetArray(GX_VA_POS,  &vtx_buffer->pos, sizeof(ImDrawVert));
 		GX_SetArray(GX_VA_CLR0, &vtx_buffer->col, sizeof(ImDrawVert));
 		GX_SetArray(GX_VA_TEX0, &vtx_buffer->uv,  sizeof(ImDrawVert));
@@ -120,7 +129,7 @@ void ImGui_ImplGX_RenderDrawData(ImDrawData* draw_data)
 
 			// Apply scissor/clipping rectangle
 			rs.set_scissor((u32)clip_min.x,
-			               (u32)clip_max.y,
+			               (u32)clip_min.y,
 			               (u32)(clip_max.x - clip_min.x),
 			               (u32)(clip_max.y - clip_min.y));
 
@@ -128,14 +137,47 @@ void ImGui_ImplGX_RenderDrawData(ImDrawData* draw_data)
 			rs.load_tex_obj((GXTexObj*)pcmd->GetTexID());
 
 			// Draw
-			GX_Begin(GX_TRIANGLES, GX_VTXFMT0, (u16)pcmd->ElemCount);
+			const auto vertex_count = (u16)pcmd->ElemCount;
+			GX_Begin(GX_TRIANGLES, GX_VTXFMT0, vertex_count);
 
-			for (auto elem = 0u; elem < pcmd->ElemCount; elem++) {
-				const auto index = idx_buffer[pcmd->IdxOffset + elem];
+			for (u16 vertex = 0; vertex < vertex_count; vertex++) {
+				const auto index = idx_buffer[pcmd->IdxOffset + vertex];
 				gx_fifo->write(index, index, index);
 			}
 		}
 	}
+}
+
+static void *ImGui_ImplGX_ConvertAlpha8ToI8(unsigned char *in, int real_width, int real_height)
+{
+	constexpr auto block_width = 8;
+	constexpr auto block_height = 4;
+	constexpr auto block_size = block_width * block_height;
+	const auto width = align_up(real_width, block_width);
+	const auto height = align_up(real_height, block_height);
+	const auto size = width * height;
+	const auto block_num_x = width / block_width;
+
+	auto *out = (unsigned char*)IM_ALLOC(size);
+
+	for (auto pixel = 0; pixel < size; pixel++) {
+		const auto block_index = pixel / block_size;
+		const auto block_x = (block_index % block_num_x) * block_width;
+		const auto block_y = (block_index / block_num_x) * block_height;
+		const auto offset = pixel % block_size;
+		const auto offset_x = offset % block_width;
+		const auto offset_y = offset / block_width;
+		const auto x = block_x + offset_x;
+		const auto y = block_y + offset_y;
+
+		if (x < real_width && y < real_height)
+			out[pixel] = in[y * real_width + x];
+		else
+			out[pixel] = 0;
+	}
+
+	DCStoreRange(out, size);
+	return out;
 }
 
 bool ImGui_ImplGX_CreateFontsTexture()
@@ -148,7 +190,9 @@ bool ImGui_ImplGX_CreateFontsTexture()
 	int width, height;
 	io.Fonts->GetTexDataAsAlpha8(&pixels, &width, &height);
 
-	GX_InitTexObj(&bd->font_texture, pixels, (u16)width, (u16)height,
+	auto *converted = ImGui_ImplGX_ConvertAlpha8ToI8(pixels, width, height);
+
+	GX_InitTexObj(&bd->font_texture, converted, (u16)width, (u16)height,
 	              GX_TF_I8, GX_CLAMP, GX_CLAMP, GX_FALSE);
 
 	// Store our identifier

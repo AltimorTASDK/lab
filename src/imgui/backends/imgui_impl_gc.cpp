@@ -71,6 +71,16 @@ void ImGui_ImplGC_Shutdown()
 	io.BackendPlatformUserData = NULL;
 }
 
+static void ImGui_ImplGC_AddTextEvent(int key)
+{
+	auto &io = ImGui::GetIO();
+
+	if (key == ImGuiKey_Space)
+		io.AddInputCharacter(' ');
+	else if (key >= ImGuiKey_A && key <= ImGuiKey_Z)
+		io.AddInputCharacter(key - ImGuiKey_A + 'a');
+}
+
 static void ImGui_ImplGC_CheckKey(const SIKeyboard &kb, const SIKeyboard &last_kb,
                                   int si_key, int imgui_key)
 {
@@ -84,10 +94,12 @@ static void ImGui_ImplGC_CheckKey(const SIKeyboard &kb, const SIKeyboard &last_k
 
 	auto &io = ImGui::GetIO();
 
-	if (pressed && !pressed_last)
+	if (pressed && !pressed_last) {
 		io.AddKeyEvent(imgui_key, true);
-	else if (!pressed && pressed_last)
+		ImGui_ImplGC_AddTextEvent(imgui_key);
+	} else if (!pressed && pressed_last) {
 		io.AddKeyEvent(imgui_key, false);
+	}
 }
 
 static void ImGui_ImplGC_PollKeyboardCallback(s32 chan, u32 status)

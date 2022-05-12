@@ -13,6 +13,8 @@
 extern "C" void CSS_Setup();
 extern "C" void HSD_ResetScene();
 
+static char text_buf[256] = { 't', 'e', 's', 't', '\0' };
+
 static void draw(HSD_GObj *gobj, u32 pass)
 {
 	if (pass != HSD_RP_BOTTOMHALF)
@@ -36,7 +38,7 @@ static void draw(HSD_GObj *gobj, u32 pass)
 	            "hand, and winning tournaments with the other. The tournament\n"
 	            "metagame has gotten to this point where everything is played\n"
 	            "out to theoretical perfection, so tournament goers play Rock\n"
-	            "Paper Scissors for port priority, and that’s the game.\n"
+	            "Paper Scissors for port priority, and that's the game.\n"
 	            "The leaders of the anti-20XX movement aim to keep 20XX from\n"
 	            "coming. These warriors include Juan \"Hungrybox\" DeBiedma,\n"
 	            "Kevin \"PewPewU\" Toy, Kevin \"PPMD\" Nanney, and Jeffery \"Axe\"\n"
@@ -50,6 +52,9 @@ static void draw(HSD_GObj *gobj, u32 pass)
 		OSReport("gaming");
 	if (ImGui::Button("fox mccloud"))
 		OSReport("fox mccloud");
+
+	ImGui::InputTextMultiline("input field", text_buf, IM_ARRAYSIZE(text_buf));
+
 	ImGui::End();
 
 	ImGui::Render();

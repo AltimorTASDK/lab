@@ -78,18 +78,22 @@ CXXFILES += $(IMGUI)/imgui_draw.cpp $(IMGUI)/imgui_tables.cpp $(IMGUI)/imgui_wid
 DEFINES  += -DIMGUI_USER_CONFIG=\"imgui/userconfig.h\"
 $(OBJDIR)/$(IMGUI)/%.o: CFLAGS += -Wno-conversion
 
+# Include stb
+STB     := $(LIBDIR)/stb
+INCLUDE += -I$(STB)
+
 # Include bscanf
-BSCANF   := $(LIBDIR)/bscanf
-INCLUDE  += -I$(BSCANF)
-CFILES   += $(BSCANF)/bscanf.c
+BSCANF  := $(LIBDIR)/bscanf
+INCLUDE += -I$(BSCANF)
+CFILES  += $(BSCANF)/bscanf.c
 $(OBJDIR)/$(BSCANF)/%.o: CFLAGS += -Wno-char-subscripts -Wno-unused-but-set-variable
 
 # Include dietlibc
-DIET     := $(LIBDIR)/dietlibc
-CFILES   += $(DIET)/lib/strtol.c $(DIET)/lib/strtod.c \
-		    $(DIET)/lib/isalnum.c $(DIET)/lib/isspace.c \
-		    $(DIET)/lib/strstr.c \
-		    $(DIET)/lib/qsort.c
+DIET   := $(LIBDIR)/dietlibc
+CFILES += $(DIET)/lib/strtol.c $(DIET)/lib/strtod.c \
+		  $(DIET)/lib/isalnum.c $(DIET)/lib/isspace.c \
+		  $(DIET)/lib/strstr.c \
+		  $(DIET)/lib/qsort.c
 $(OBJDIR)/$(DIET)/%.o: INCLUDE += -I$(DIET) -I$(DIET)/include
 $(OBJDIR)/$(DIET)/%.o: CFLAGS += -Wno-char-subscripts -Wno-sign-conversion -Wno-attributes
 

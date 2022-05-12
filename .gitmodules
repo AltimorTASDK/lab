@@ -10,3 +10,6 @@
 [submodule "lib/dietlibc"]
 	path = lib/dietlibc
 	url = https://github.com/ensc/dietlibc.git
+[submodule "lib/stb"]
+	path = lib/stb
+	url = https://github.com/nothings/stb

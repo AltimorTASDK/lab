@@ -49,7 +49,7 @@ CFLAGS    = $(DEFINES) -mogc -mcpu=750 -meabi -mhard-float -Os \
             -fno-builtin-sqrt -fno-builtin-sqrtf -flto
 ASFLAGS   = $(DEFINES) -Wa,-mregnames -Wa,-mgekko
 CXXFLAGS  = $(CFLAGS) -std=c++2b -fconcepts -fno-rtti -fno-exceptions
-INCLUDE  := $(foreach dir, $(SRCDIR), -I$(dir)) -I$(DEVKITPATH)/libogc/include
+INCLUDE  := $(foreach dir, $(SRCDIR), -I$(dir)) -I$(DEVKITPATH)/libogc/include -Isrc/libc
 
 ifdef BETA
 DEFINES += -DBETA

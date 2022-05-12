@@ -7,3 +7,4 @@
 
 IMGUI_IMPL_API bool ImGui_ImplGC_Init();
 IMGUI_IMPL_API void ImGui_ImplGC_Shutdown();
+IMGUI_IMPL_API void ImGui_ImplGC_NewFrame();

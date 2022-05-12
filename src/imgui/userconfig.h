@@ -60,6 +60,13 @@
 //---- Pack colors to BGRA8 instead of RGBA8 (to avoid converting from one to another)
 //#define IMGUI_USE_BGRA_PACKED_COLOR
 
+// Big endian
+#define IM_COL32_R_SHIFT    24
+#define IM_COL32_G_SHIFT    16
+#define IM_COL32_B_SHIFT    8
+#define IM_COL32_A_SHIFT    0
+#define IM_COL32_A_MASK     0x000000FF
+
 //---- Use 32-bit for ImWchar (default is 16-bit) to support unicode planes 1-16. (e.g. point beyond 0xFFFF like emoticons, dingbats, symbols, shapes, ancient languages, etc...)
 //#define IMGUI_USE_WCHAR32
 

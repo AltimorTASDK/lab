@@ -4,3 +4,9 @@
 [submodule "lib/imgui"]
 	path = lib/imgui
 	url = https://github.com/ocornut/imgui.git
+[submodule "lib/bscanf"]
+	path = lib/bscanf
+	url = https://github.com/tusharjois/bscanf.git
+[submodule "lib/dietlibc"]
+	path = lib/dietlibc
+	url = https://github.com/ensc/dietlibc.git

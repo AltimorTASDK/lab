@@ -21,14 +21,9 @@ else
 MODNAME := lab
 endif
 
-ifdef BETA
-DEFINES += -DBETA
-endif
-
 LIBDIR  := lib
 BASE103 := $(LIBDIR)/ssbm-1.03
 BASEMOD := $(LIBDIR)/ssbm-1.03/src/mod
-IMGUI   := $(LIBDIR)/imgui
 
 VERSION := 102
 DEFINES += -DMODNAME=\"$(MODNAME)\" -DNTSC102
@@ -42,7 +37,7 @@ GENDIR  := build/gen
 SRCDIR  := src $(GENDIR) $(BASEMOD)/src
 
 OUTPUTMAP   = $(OBJDIR)/output.map
-LDFLAGS     = -Wl,-Map=$(OUTPUTMAP) -Wl,--gc-sections -flto
+LDFLAGS     = -nolibc -Wl,-Map=$(OUTPUTMAP) -Wl,--gc-sections -flto
 STATICLIBS := -lm
 
 MELEEMAP  = $(MELEELD:.ld=.map)
@@ -54,7 +49,17 @@ CFLAGS    = $(DEFINES) -mogc -mcpu=750 -meabi -mhard-float -Os \
             -fno-builtin-sqrt -fno-builtin-sqrtf -flto
 ASFLAGS   = $(DEFINES) -Wa,-mregnames -Wa,-mgekko
 CXXFLAGS  = $(CFLAGS) -std=c++2b -fconcepts -fno-rtti -fno-exceptions
-INCLUDE  := $(foreach dir, $(SRCDIR), -I$(dir)) -I$(DEVKITPATH)/libogc/include -I$(IMGUI)
+INCLUDE  := $(foreach dir, $(SRCDIR), -I$(dir)) -I$(DEVKITPATH)/libogc/include
+
+ifdef BETA
+DEFINES += -DBETA
+endif
+
+ifdef DEBUG
+CFLAGS  += -g
+else
+DEFINES += -DNDEBUG
+endif
 
 DOLFILE := $(ISODIR)/sys/main.dol
 PATCHES := $(BINDIR)/patches.bin
@@ -67,8 +72,26 @@ CXXFILES := $(foreach dir, $(SRCDIR), $(shell find $(dir) -type f -name '*.cpp' 
 SFILES   := $(foreach dir, $(SRCDIR), $(shell find $(dir) -type f -name '*.S'   2> /dev/null))
 
 # Include imgui
+IMGUI    := $(LIBDIR)/imgui
+INCLUDE  += -I$(IMGUI)
 CXXFILES += $(IMGUI)/imgui_draw.cpp $(IMGUI)/imgui_tables.cpp $(IMGUI)/imgui_widgets.cpp $(IMGUI)/imgui.cpp
+DEFINES  += -DIMGUI_USER_CONFIG=\"imgui/userconfig.h\"
 $(OBJDIR)/$(IMGUI)/%.o: CFLAGS += -Wno-conversion
+
+# Include bscanf
+BSCANF   := $(LIBDIR)/bscanf
+INCLUDE  += -I$(BSCANF)
+CFILES   += $(BSCANF)/bscanf.c
+$(OBJDIR)/$(BSCANF)/%.o: CFLAGS += -Wno-char-subscripts -Wno-unused-but-set-variable
+
+# Include dietlibc
+DIET     := $(LIBDIR)/dietlibc
+CFILES   += $(DIET)/lib/strtol.c $(DIET)/lib/strtod.c \
+		    $(DIET)/lib/isalnum.c $(DIET)/lib/isspace.c \
+		    $(DIET)/lib/strstr.c \
+		    $(DIET)/lib/qsort.c
+$(OBJDIR)/$(DIET)/%.o: INCLUDE += -I$(DIET) -I$(DIET)/include
+$(OBJDIR)/$(DIET)/%.o: CFLAGS += -Wno-char-subscripts -Wno-sign-conversion -Wno-attributes
 
 OBJFILES := \
 	$(patsubst %, $(OBJDIR)/%.o, $(CFILES)) \

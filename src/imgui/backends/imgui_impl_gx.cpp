@@ -15,12 +15,11 @@ struct ImGui_ImplGX_Data {
 
 // Backend data stored in io.BackendRendererUserData to allow support for multiple Dear ImGui contexts
 // It is STRONGLY preferred that you use docking branch with multi-viewports (== single Dear ImGui context + multiple windows) instead of multiple Dear ImGui contexts.
-static ImGui_ImplGX_Data* ImGui_ImplGX_GetBackendData()
+static ImGui_ImplGX_Data *ImGui_ImplGX_GetBackendData()
 {
-	if (ImGui::GetCurrentContext() == nullptr)
-		return nullptr;
-
-	return (ImGui_ImplGX_Data*)ImGui::GetIO().BackendRendererUserData;
+	return ImGui::GetCurrentContext() != nullptr
+		? (ImGui_ImplGX_Data*)ImGui::GetIO().BackendRendererUserData
+		: NULL;
 }
 
 // Functions
@@ -100,7 +99,8 @@ void ImGui_ImplGX_RenderDrawData(ImDrawData* draw_data)
 
 			if (pcmd->UserCallback) {
 				// User callback, registered via ImDrawList::AddCallback()
-				// (ImDrawCallback_ResetRenderState is a special callback value used by the user to request the renderer to reset render state.)
+				// (ImDrawCallback_ResetRenderState is a special callback value used
+				// by the user to request the renderer to reset render state.)
 				if (pcmd->UserCallback == ImDrawCallback_ResetRenderState)
 					ImGui_ImplGX_SetupRenderState();
 				else
@@ -126,6 +126,9 @@ void ImGui_ImplGX_RenderDrawData(ImDrawData* draw_data)
 
 			// Bind texture
 			rs.load_tex_obj((GXTexObj*)pcmd->GetTexID());
+
+			// Draw
+			GX_Begin(GX_TRIANGLES, GX_VTXFMT0, (u16)pcmd->ElemCount);
 
 			for (auto elem = 0u; elem < pcmd->ElemCount; elem++) {
 				const auto index = idx_buffer[pcmd->IdxOffset + elem];

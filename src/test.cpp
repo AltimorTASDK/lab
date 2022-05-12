@@ -54,17 +54,6 @@ static void draw(HSD_GObj *gobj, u32 pass)
 
 	ImGui::Render();
         ImGui_ImplGX_RenderDrawData(ImGui::GetDrawData());
-
-	/*constexpr auto offset = vec3(0, 0, -900);
-	constexpr auto size = vec2(640, 480);
-
-	auto &rs = render_state::get();
-	rs.reset_2d();
-	GX_SetZMode(GX_FALSE, GX_NEVER, GX_FALSE);
-	rs.fill_rect(offset, size, color_rgba::white, texture_l,
-	             uv_coord::zero, uv_coord::one, align::top_left);
-	rs.reset_3d();
-	HSD_CObjSetCurrent(HSD_CObjGetCurrent());*/
 }
 
 HOOK(CSS_Setup, [&]()

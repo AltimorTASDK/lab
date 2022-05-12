@@ -41,8 +41,9 @@ DEPDIR  := build/dep
 GENDIR  := build/gen
 SRCDIR  := src $(GENDIR) $(BASEMOD)/src
 
-OUTPUTMAP = $(OBJDIR)/output.map
-LDFLAGS   = -Wl,-Map=$(OUTPUTMAP) -Wl,--gc-sections -flto
+OUTPUTMAP   = $(OBJDIR)/output.map
+LDFLAGS     = -Wl,-Map=$(OUTPUTMAP) -Wl,--gc-sections -flto
+STATICLIBS := -lm
 
 MELEEMAP  = $(MELEELD:.ld=.map)
 
@@ -59,13 +60,15 @@ DOLFILE := $(ISODIR)/sys/main.dol
 PATCHES := $(BINDIR)/patches.bin
 DOLELF  := $(BINDIR)/dol.elf
 DOLDATA := $(OBJDIR)/dol_data.bin
-DOLLD   := $(BASEMOD)/dol.ld
+DOLLD   := lab.ld
 
 CFILES   := $(foreach dir, $(SRCDIR), $(shell find $(dir) -type f -name '*.c'   2> /dev/null))
 CXXFILES := $(foreach dir, $(SRCDIR), $(shell find $(dir) -type f -name '*.cpp' 2> /dev/null))
 SFILES   := $(foreach dir, $(SRCDIR), $(shell find $(dir) -type f -name '*.S'   2> /dev/null))
 
+# Include imgui
 CXXFILES += $(IMGUI)/imgui_draw.cpp $(IMGUI)/imgui_tables.cpp $(IMGUI)/imgui_widgets.cpp $(IMGUI)/imgui.cpp
+$(OBJDIR)/$(IMGUI)/%.o: CFLAGS += -Wno-conversion
 
 OBJFILES := \
 	$(patsubst %, $(OBJDIR)/%.o, $(CFILES)) \
@@ -74,10 +77,8 @@ OBJFILES := \
 
 DEPFILES := $(patsubst $(OBJDIR)/%.o, $(DEPDIR)/%.d, $(OBJFILES))
 
-LINKSCRIPT := mod.ld
-
 .PHONY: lab
-lab: $(DOLFILE)
+lab: $(DOLFILE) | clean-unused
 
 $(DOLFILE): $(DOLELF) $(PATCHES) $(TOOLS)/patch_dol.py
 	@[ -d $(@D) ] || mkdir -p $(@D)
@@ -89,9 +90,9 @@ $(PATCHES): $(DOLELF)
 	@[ -d $(@D) ] || mkdir -p $(@D)
 	$(OBJCOPY) -O binary -j .patches $< $@
 
-$(DOLELF): $(OBJFILES) $(DOLDATA) $(DOLLD) $(MELEELD) $(BASEMOD)/../common.ld | clean-unused
+$(DOLELF): $(OBJFILES) $(DOLDATA) $(DOLLD) $(MELEELD) $(BASEMOD)/../common.ld
 	@[ -d $(@D) ] || mkdir -p $(@D)
-	$(CC) $(LDFLAGS) -T$(DOLLD) -T$(MELEELD) $(OBJFILES) -o $@
+	$(CC) $(LDFLAGS) -T$(DOLLD) -T$(MELEELD) $(OBJFILES) $(STATICLIBS) -o $@
 
 $(DOLDATA): $(DOLSRC)
 	@[ -d $(@D) ] || mkdir -p $(@D)
@@ -116,17 +117,15 @@ $(OBJDIR)/%.S.o: %.S
 	@[ -d $(subst $(OBJDIR), $(DEPDIR), $(@D)) ] || mkdir -p $(subst $(OBJDIR), $(DEPDIR), $(@D))
 	$(CC) $(ASFLAGS) -c $< -o $@
 
-$(OBJDIR)/$(IMGUI)/%.cpp.o: CXXFLAGS += -Wno-conversion
-
 RESOURCE_DIR_IN  := resources $(BASEMOD)/resources
 RESOURCE_DIR_OUT := $(GENDIR)/resources
 -include $(BASEMOD)/resources.mk
 
 .PHONY: clean
 clean:
-	rm -rf $(BINDIR) $(OBJDIR) $(DEPDIR) $(RESOURCE_DIR_OUT)
+	rm -rf build
 
-# Remove unused obj/dep/resource files
+# Remove unused obj/dep/gen files
 .PHONY: clean-unused
 clean-unused:
 	$(foreach file, $(shell find $(OBJDIR) -type f 2> /dev/null), \
@@ -135,7 +134,7 @@ clean-unused:
 	$(foreach file, $(shell find $(DEPDIR) -type f 2> /dev/null), \
 		$(if $(filter $(file), $(DEPFILES)),, \
 		rm $(file);))
-	$(foreach file, $(shell find $(RESOURCE_DIR_OUT) -type f 2> /dev/null), \
+	$(foreach file, $(shell find $(GENDIR) -type f 2> /dev/null), \
 		$(if $(filter $(file), $(RESOURCES_OUT) $(RESOURCE_HEADERS)),, \
 		rm $(file);))
 

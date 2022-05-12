@@ -106,7 +106,7 @@ lab: $(DOLFILE) | clean-unused
 $(DOLFILE): $(DOLELF) $(PATCHES) $(TOOLS)/patch_dol.py
 	@[ -d $(@D) ] || mkdir -p $(@D)
 	@[ $(DOLSRC) ] || ( echo "\$$DOLSRC must be set to the path of an NTSC 1.02 main.dol file." >& 2; exit 1 )
-	$(OBJCOPY) -O binary -R .patches $< $@
+	$(OBJCOPY) -O binary -R .patches --strip-debug $< $@
 	python $(TOOLS)/patch_dol.py $@ $@ $(OUTPUTMAP) $(PATCHES)
 
 $(PATCHES): $(DOLELF)

@@ -84,8 +84,8 @@ static void ImGui_ImplGC_AddTextEvent(int key)
 static void ImGui_ImplGC_CheckKey(const SIKeyboard &kb, const SIKeyboard &last_kb,
                                   int si_key, int imgui_key)
 {
-	bool pressed;
-	bool pressed_last;
+	auto pressed      = false;
+	auto pressed_last = false;
 
 	for (auto i = 0; i < 3; i++) {
 		pressed      = pressed      || kb.keys[i]      == si_key;

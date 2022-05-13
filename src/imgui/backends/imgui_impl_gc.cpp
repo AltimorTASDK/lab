@@ -216,7 +216,7 @@ static void ImGui_ImplGC_PollKeyboard(s32 chan)
 	}
 
 	auto cmd_direct = 0x54000000;
-	SI_Transfer(chan, &cmd_direct, 1, &bd->keyboard[chan], 8,
+	SI_Transfer(chan, &cmd_direct, 1, &bd->keyboard[chan], sizeof(SIKeyboard),
 	            ImGui_ImplGC_PollKeyboardCallback, 0);
 }
 

@@ -24,10 +24,6 @@ struct ImGui_ImplGC_Data {
 	SIKeyboard last_keyboard[4];
 };
 
-// Backend data stored in io.BackendPlatformUserData to allow support for multiple Dear ImGui contexts
-// It is STRONGLY preferred that you use docking branch with multi-viewports (== single Dear ImGui context + multiple windows) instead of multiple Dear ImGui contexts.
-// FIXME: multi-context support is not well tested and probably dysfunctional in this backend.
-// FIXME: some shared resources (mouse cursor shape, gamepad) are mishandled when using multi-context.
 static ImGui_ImplGC_Data *ImGui_ImplGC_GetBackendData()
 {
 	return ImGui::GetCurrentContext() != nullptr
@@ -332,7 +328,7 @@ static void ImGui_ImplGC_AddTextEvents()
 void ImGui_ImplGC_NewFrame()
 {
 	auto *bd = ImGui_ImplGC_GetBackendData();
-	IM_ASSERT(bd != nullptr && "Did you call ImGui_ImplSDL2_Init()?");
+	IM_ASSERT(bd != nullptr && "Did you call ImGui_ImplGC_Init()?");
 
 	for (auto chan = 0; chan < 4; chan++) {
 		ImGui_ImplGC_PollPad(chan);

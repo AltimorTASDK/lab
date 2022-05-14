@@ -1,6 +1,8 @@
 #include "event/event.h"
 
-EVENT_ARGS("console.cmd", unsigned int cmd_hash, const char *line);
+namespace events::console {
+inline event<bool(unsigned int cmd_hash, const char *line)> cmd;
+} // events::console
 
 namespace console {
 

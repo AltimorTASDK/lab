@@ -14,7 +14,7 @@ HOOK(GObj_RenderAll, [&]()
 	ImGui_ImplGX_NewFrame();
 	ImGui::NewFrame();
 
-	event::fire<"imgui.draw">();
+	events::imgui::draw.fire();
 
 	ImGui::Render();
         ImGui_ImplGX_RenderDrawData(ImGui::GetDrawData());

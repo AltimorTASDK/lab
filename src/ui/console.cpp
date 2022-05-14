@@ -48,7 +48,7 @@ static void parse_line()
                 return;
         }
 
-        if (!event::fire<"console.cmd">(hash(cmd), line_buf))
+        if (!events::console::cmd.fire(hash(cmd), line_buf))
                 console::printf("Unrecognized command \"%s\"", cmd);
 }
 
@@ -57,7 +57,7 @@ static int text_callback(ImGuiInputTextCallbackData *data)
         return data->EventChar != '`' && data->EventChar != '~';
 }
 
-EVENT_HANDLER("imgui.draw", []()
+static event_handler draw_handler(&events::imgui::draw, []()
 {
         if (ImGui::IsKeyPressed(ImGuiKey_GraveAccent, false))
                 console_open = !console_open;

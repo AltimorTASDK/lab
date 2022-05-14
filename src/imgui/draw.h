@@ -2,4 +2,6 @@
 
 #include "event/event.h"
 
-EVENT_ARGS_VOID("imgui.draw");
+namespace events::imgui {
+inline event<void()> draw;
+} // events::imgui

@@ -144,6 +144,9 @@ void ImGui_ImplGX_RenderDrawData(ImDrawData* draw_data)
 			}
 		}
 	}
+
+	// Restore cull mode to expected value
+	GX_SetCullMode(GX_CULL_BACK);
 }
 
 static void *ImGui_ImplGX_ConvertAlpha8ToI8(unsigned char *in, int real_width, int real_height)

@@ -20,8 +20,8 @@ struct ImGui_ImplGC_Pad {
 // GC Data
 struct ImGui_ImplGC_Data {
 	ImGui_ImplGC_Pad last_pad[4];
-	SIKeyboard keyboard[4];
-	SIKeyboard last_keyboard[4];
+	SIKeyboardStatus keyboard[4];
+	SIKeyboardStatus last_keyboard[4];
 };
 
 static ImGui_ImplGC_Data *ImGui_ImplGC_GetBackendData()
@@ -64,7 +64,7 @@ void ImGui_ImplGC_Shutdown()
 	io.BackendPlatformUserData = NULL;
 }
 
-static void ImGui_ImplGC_CheckKey(const SIKeyboard &kb, const SIKeyboard &last_kb,
+static void ImGui_ImplGC_CheckKey(const SIKeyboardStatus &kb, const SIKeyboardStatus &last_kb,
                                   int si_key, auto ...imgui_keys)
 {
 	auto pressed      = false;
@@ -197,7 +197,7 @@ static void ImGui_ImplGC_PollKeyboard(s32 chan)
 
 	// Request keyboard inputs
 	auto cmd_direct = 0x54000000;
-	SI_Transfer(chan, &cmd_direct, 1, &bd->keyboard[chan], sizeof(SIKeyboard),
+	SI_Transfer(chan, &cmd_direct, 1, &bd->keyboard[chan], sizeof(SIKeyboardStatus),
 	            [](s32, u32) {}, 0);
 
 	ImGui_ImplGC_CheckKeyboard(chan);

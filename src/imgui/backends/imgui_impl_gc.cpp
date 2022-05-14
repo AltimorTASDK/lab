@@ -323,8 +323,8 @@ static void ImGui_ImplGC_AddTextEvents()
 		ImGui_ImplGC_TextForKeys(")!@#$%^&*(",   ImGuiKey_0,          ImGuiKey_9);
 		ImGui_ImplGC_TextForKeys("\"<_>?:+{|}~", ImGuiKey_Apostrophe, ImGuiKey_GraveAccent);
 	} else {
-		ImGui_ImplGC_TextForKeys('a', ImGuiKey_A, ImGuiKey_Z);
-		ImGui_ImplGC_TextForKeys('0', ImGuiKey_0, ImGuiKey_9);
+		ImGui_ImplGC_TextForKeys('a',            ImGuiKey_A,          ImGuiKey_Z);
+		ImGui_ImplGC_TextForKeys('0',            ImGuiKey_0,          ImGuiKey_9);
 		ImGui_ImplGC_TextForKeys("',-./;=[\\]`", ImGuiKey_Apostrophe, ImGuiKey_GraveAccent);
 	}
 }

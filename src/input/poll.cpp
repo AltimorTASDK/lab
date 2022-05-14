@@ -1,6 +1,6 @@
 #include "os/serial.h"
 #include "os/vi.h"
-#include "input/subframe.h"
+#include "input/poll.h"
 #include "ui/console.h"
 #include "util/hash.h"
 #include "util/hooks.h"
@@ -36,28 +36,27 @@ static event_handler cmd_handler(&events::console::cmd, [](unsigned int cmd_hash
 
 HOOK(SI_SetXY, [&](u16 line, u8 cnt)
 {
-	// Change poll interval so the last poll happens when it would on vanilla
-	const auto new_cnt = (u8)(cnt * polling_mult);
-	const auto new_line = (u16)(line * (cnt - 1) / (new_cnt - 1));
-	original(new_line, new_cnt);
+	// Change poll interval so the middle poll happens when it would on vanilla
+	original((u16)(line / polling_mult), (u8)(cnt * polling_mult));
 });
 
 HOOK(SI_GetResponseRaw, [&](s32 chan)
 {
 	const auto result = original(chan);
-
-	if (result)
-		events::input::poll.fire(chan, (SIPadStatus&)SICHANNEL[chan].in.status);
+	const auto copy = (SIPadStatus&)SICHANNEL[chan].in.status;
 
 	const auto retrace_count = VIGetRetraceCount();
 	if (retrace_count > last_retrace_count[chan])
 		poll_index[chan] = 0;
 
+	if (result)
+		events::input::poll.fire(chan, copy);
+
 	// Store the polls that would happen at 120Hz
 	if (!result)
 		status[chan] = { 0 };
-	else if (poll_index[chan] == 0 || poll_index[chan] == Si.poll.y - 1)
-		status[chan] = (SIPadStatus&)SICHANNEL[chan].in.status;
+	else if (poll_index[chan] == 0 || poll_index[chan] == Si.poll.y / 2)
+		status[chan] = copy;
 
 	poll_index[chan]++;
 	last_retrace_count[chan] = retrace_count;

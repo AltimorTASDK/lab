@@ -8,8 +8,8 @@
 #include <cstring>
 
 static u32 polling_mult = 1;
-static s32 poll_index[4] = { 0 };
-static u32 last_retrace_count[4] = { 0 };
+static s32 poll_index[4];
+static u32 last_retrace_count[4];
 static SIPadStatus status[4];
 
 static event_handler cmd_handler(&events::console::cmd, [](unsigned int cmd_hash, const char *line)
@@ -47,17 +47,16 @@ HOOK(SI_GetResponseRaw, [&](s32 chan)
 	const auto result = original(chan);
 
 	if (result)
-		events::input::poll.fire((SIPadStatus&)SICHANNEL[chan].in.status);
-
-	if (polling_mult == 1)
-		return result;
+		events::input::poll.fire(chan, (SIPadStatus&)SICHANNEL[chan].in.status);
 
 	const auto retrace_count = VIGetRetraceCount();
-	if (VIGetRetraceCount() > last_retrace_count[chan])
+	if (retrace_count > last_retrace_count[chan])
 		poll_index[chan] = 0;
 
 	// Store the polls that would happen at 120Hz
-	if (poll_index[chan] == 0 || poll_index[chan] == Si.poll.y - 1)
+	if (!result)
+		status[chan] = { 0 };
+	else if (poll_index[chan] == 0 || poll_index[chan] == Si.poll.y - 1)
 		status[chan] = (SIPadStatus&)SICHANNEL[chan].in.status;
 
 	poll_index[chan]++;

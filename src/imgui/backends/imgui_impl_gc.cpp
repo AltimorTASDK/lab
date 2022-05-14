@@ -281,20 +281,17 @@ static void ImGui_ImplGC_PollPad(s32 chan)
 	if (((pad.buttons ^ last_pad.buttons) & Button_R) || pad.analog_r != last_pad.analog_r)
 		io.AddKeyAnalogEvent(ImGuiKey_GamepadR2, pad.buttons & Button_R, pad.analog_r);
 
-	ImGui_ImplGC_CheckAnalog(pad.stick.x,  last_pad.stick.x,  ImGuiKey_GamepadLStickRight,
-	                                                          ImGuiKey_GamepadLStickLeft);
-	ImGui_ImplGC_CheckAnalog(pad.stick.y,  last_pad.stick.y,  ImGuiKey_GamepadLStickUp,
-	                                                          ImGuiKey_GamepadLStickDown);
-	ImGui_ImplGC_CheckAnalog(pad.cstick.x, last_pad.cstick.x, ImGuiKey_GamepadRStickRight,
-	                                                          ImGuiKey_GamepadRStickLeft);
-	ImGui_ImplGC_CheckAnalog(pad.cstick.y, last_pad.cstick.y, ImGuiKey_GamepadRStickUp,
-	                                                          ImGuiKey_GamepadRStickDown);
-
-	// Also register stick inputs as dpad inputs for imgui nav
+	// Register control stick inputs as dpad inputs for navigation
 	ImGui_ImplGC_CheckAnalog(pad.stick.x,  last_pad.stick.x,  ImGuiKey_GamepadDpadRight,
 	                                                          ImGuiKey_GamepadDpadLeft);
 	ImGui_ImplGC_CheckAnalog(pad.stick.y,  last_pad.stick.y,  ImGuiKey_GamepadDpadUp,
 	                                                          ImGuiKey_GamepadDpadDown);
+
+	// Register cstick inputs as left stick for scrolling
+	ImGui_ImplGC_CheckAnalog(pad.cstick.x, last_pad.cstick.x, ImGuiKey_GamepadLStickRight,
+	                                                          ImGuiKey_GamepadLStickLeft);
+	ImGui_ImplGC_CheckAnalog(pad.cstick.y, last_pad.cstick.y, ImGuiKey_GamepadLStickUp,
+	                                                          ImGuiKey_GamepadLStickDown);
 
 	bd->last_pad[chan] = pad;
 }

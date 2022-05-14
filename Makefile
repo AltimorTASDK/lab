@@ -91,7 +91,7 @@ $(OBJDIR)/$(BSCANF)/%.o: CFLAGS += -Wno-char-subscripts -Wno-unused-but-set-vari
 # Include dietlibc
 DIET   := $(LIBDIR)/dietlibc
 CFILES += $(DIET)/lib/strtol.c $(DIET)/lib/strtod.c \
-          $(DIET)/lib/snprintf.c $(DIET)/lib/strlcpy.c \
+          $(DIET)/lib/snprintf.c $(DIET)/lib/strlcpy.c $(DIET)/lib/strlcat.c \
 		  $(DIET)/lib/isalnum.c $(DIET)/lib/isspace.c \
 		  $(DIET)/lib/strstr.c \
 		  $(DIET)/lib/qsort.c

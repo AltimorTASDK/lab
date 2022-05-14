@@ -3,10 +3,9 @@
 #include "hsd/gobj.h"
 #include "hsd/video.h"
 #include "melee/menu.h"
+#include "event/event.h"
+#include "imgui/draw.h"
 #include "util/hash.h"
-#include "util/hooks.h"
-#include "imgui/backends/imgui_impl_gc.h"
-#include "imgui/backends/imgui_impl_gx.h"
 #include "ui/console.h"
 #include <cstdarg>
 #include <cstdio>
@@ -18,6 +17,8 @@ static constexpr auto LINE_SIZE     = 80;
 static char history_buf[HISTORY_LINES][LINE_SIZE];
 static int history_idx = 0;
 static char line_buf[LINE_SIZE];
+
+static bool console_open;
 
 void console::print(const char *line)
 {
@@ -47,18 +48,22 @@ static void parse_line()
                 return;
         }
 
-        if (!FIRE_EVENT("console.cmd", hash(cmd), line_buf))
+        if (!event::fire<"console.cmd">(hash(cmd), line_buf))
                 console::printf("Unrecognized command \"%s\"", cmd);
 }
 
-static void draw(HSD_GObj *gobj, u32 pass)
+static int text_callback(ImGuiInputTextCallbackData *data)
 {
-	if (pass != HSD_RP_BOTTOMHALF)
-		return;
+        return data->EventChar != '`' && data->EventChar != '~';
+}
 
-	ImGui_ImplGC_NewFrame();
-	ImGui_ImplGX_NewFrame();
-	ImGui::NewFrame();
+EVENT_HANDLER("imgui.draw", []()
+{
+        if (ImGui::IsKeyPressed(ImGuiKey_GraveAccent, false))
+                console_open = !console_open;
+
+        if (!console_open)
+                return;
 
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {0, 0});
 
@@ -89,24 +94,11 @@ static void draw(HSD_GObj *gobj, u32 pass)
 	ImGui::SetNextItemWidth(640);
 	ImGui::SetKeyboardFocusHere();
 	if (ImGui::InputText("##input", line_buf, IM_ARRAYSIZE(line_buf),
-	    ImGuiInputTextFlags_EnterReturnsTrue)) {
+	    ImGuiInputTextFlags_EnterReturnsTrue, text_callback)) {
                 parse_line();
 		line_buf[0] = '\0';
         }
 
 	ImGui::End();
         ImGui::PopStyleVar();
-
-	ImGui::Render();
-        ImGui_ImplGX_RenderDrawData(ImGui::GetDrawData());
-}
-
-extern "C" void CSS_Setup();
-
-HOOK(CSS_Setup, [&]()
-{
-	original();
-
-	auto *gobj = GObj_Create(4, 5, 0x80);
-	GObj_SetupGXLink(gobj, draw, 1, 0x80);
 });

@@ -3,27 +3,46 @@
 #include "util/hash.h"
 #include "util/meta.h"
 #include "util/preprocessor.h"
+#include <type_traits>
+
+#define EVENT_ARGS(name, ...) \
+	template<> struct event::handler_type<hash<name>()> { using type = bool(__VA_ARGS__); }
+
+#define EVENT_ARGS_VOID(name, ...) \
+	template<> struct event::handler_type<hash<name>()> { using type = void(__VA_ARGS__); }
+
+#define EVENT_HANDLER(name, ...) \
+	[[gnu::used]] \
+	static const event::handler<hash<name>()> CONCAT(_handler_, __COUNTER__)(__VA_ARGS__)
+
+namespace event {
 
 template<unsigned int id>
-struct event_handler_type;
+struct handler_type;
 
 template<unsigned int id>
-struct event_handler {
-	const event_handler *next;
-	const event_handler_type<id>::type *handle;
+struct handler {
+	const handler *next;
+	const handler_type<id>::type *handle;
 
-	event_handler(event_handler_type<id>::type *handle);
+	handler(handler_type<id>::type *handle);
 };
 
 template<unsigned int id>
-struct event_type {
-	inline static const event_handler<id> *head;
+struct type {
+	inline static const handler<id> *head;
 
 	static bool fire(auto &&...args)
 	{
+		using ret_type = decltype(head->handle(std::forward<decltype(args)>(args)...));
+
 		for (const auto *handler = head; handler != nullptr; handler = handler->next) {
-			if (handler->handle(args...))
-				return true;
+			if constexpr (std::is_same_v<ret_type, void>) {
+				handler->handle(std::forward<decltype(args)>(args)...);
+			} else {
+				if (handler->handle(std::forward<decltype(args)>(args)...))
+					return true;
+			}
 		}
 
 		return false;
@@ -31,19 +50,17 @@ struct event_type {
 };
 
 template<unsigned int id>
-inline event_handler<id>::event_handler(event_handler_type<id>::type *handle)
+inline handler<id>::handler(handler_type<id>::type *handle)
 	: handle(handle)
 {
-	next = event_type<id>::head;
-	event_type<id>::head = this;
+	next = type<id>::head;
+	type<id>::head = this;
 }
 
-#define EVENT_ARGS(name, ...) \
-	template<> \
-	struct event_handler_type<hash<name>()> { using type = bool(__VA_ARGS__); }
+template<string_literal name>
+inline auto fire(auto &&...args)
+{
+	return type<hash<name>()>::fire(std::forward<decltype(args)>(args)...);
+}
 
-#define FIRE_EVENT(name, ...) \
-	event_type<hash<name>()>::fire(__VA_ARGS__)
-
-#define EVENT_HANDLER(name, ...) \
-	static event_handler<hash<name>()> CONCAT(_handler_, __COUNTER__)(__VA_ARGS__)
+} // namespace event

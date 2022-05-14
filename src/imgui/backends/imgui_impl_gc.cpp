@@ -6,7 +6,6 @@
 #include "os/serial.h"
 #include "hsd/pad.h"
 #include "util/vector.h"
-#include <ogc/machine/asm.h>
 
 struct ImGui_ImplGC_Pad {
 	u32 buttons;
@@ -69,18 +68,8 @@ void ImGui_ImplGC_Shutdown()
 	io.BackendPlatformUserData = NULL;
 }
 
-static void ImGui_ImplGC_AddTextEvent(int key)
-{
-	auto &io = ImGui::GetIO();
-
-	if (key == ImGuiKey_Space)
-		io.AddInputCharacter(' ');
-	else if (key >= ImGuiKey_A && key <= ImGuiKey_Z)
-		io.AddInputCharacter(key - ImGuiKey_A + 'a');
-}
-
 static void ImGui_ImplGC_CheckKey(const SIKeyboard &kb, const SIKeyboard &last_kb,
-                                  int si_key, int imgui_key)
+                                  int si_key, auto ...imgui_keys)
 {
 	auto pressed      = false;
 	auto pressed_last = false;
@@ -92,12 +81,10 @@ static void ImGui_ImplGC_CheckKey(const SIKeyboard &kb, const SIKeyboard &last_k
 
 	auto &io = ImGui::GetIO();
 
-	if (pressed && !pressed_last) {
-		io.AddKeyEvent(imgui_key, true);
-		ImGui_ImplGC_AddTextEvent(imgui_key);
-	} else if (!pressed && pressed_last) {
-		io.AddKeyEvent(imgui_key, false);
-	}
+	if (pressed && !pressed_last)
+		(io.AddKeyEvent(imgui_keys, true), ...);
+	else if (!pressed && pressed_last)
+		(io.AddKeyEvent(imgui_keys, false), ...);
 }
 
 static void ImGui_ImplGC_CheckKeyboard(s32 chan)
@@ -179,13 +166,19 @@ static void ImGui_ImplGC_CheckKeyboard(s32 chan)
 	ImGui_ImplGC_CheckKey(kb, last_kb, KEY_BACKSPACE,      ImGuiKey_Backspace);
 	ImGui_ImplGC_CheckKey(kb, last_kb, KEY_TAB,            ImGuiKey_Tab);
 	ImGui_ImplGC_CheckKey(kb, last_kb, KEY_CAPSLOCK,       ImGuiKey_CapsLock);
-	ImGui_ImplGC_CheckKey(kb, last_kb, KEY_LEFTSHIFT,      ImGuiKey_LeftShift);
-	ImGui_ImplGC_CheckKey(kb, last_kb, KEY_RIGHTSHIFT,     ImGuiKey_RightShift);
-	ImGui_ImplGC_CheckKey(kb, last_kb, KEY_LEFTCONTROL,    ImGuiKey_LeftCtrl);
-	ImGui_ImplGC_CheckKey(kb, last_kb, KEY_RIGHTALT,       ImGuiKey_RightAlt);
-	ImGui_ImplGC_CheckKey(kb, last_kb, KEY_LEFTWINDOWS,    ImGuiKey_LeftSuper);
+	ImGui_ImplGC_CheckKey(kb, last_kb, KEY_LEFTSHIFT,      ImGuiKey_LeftShift,
+	                                                       ImGuiKey_ModShift);
+	ImGui_ImplGC_CheckKey(kb, last_kb, KEY_RIGHTSHIFT,     ImGuiKey_RightShift,
+	                                                       ImGuiKey_ModShift);
+	ImGui_ImplGC_CheckKey(kb, last_kb, KEY_LEFTCONTROL,    ImGuiKey_LeftCtrl,
+	                                                       ImGuiKey_ModCtrl);
+	ImGui_ImplGC_CheckKey(kb, last_kb, KEY_RIGHTALT,       ImGuiKey_RightAlt,
+	                                                       ImGuiKey_ModAlt);
+	ImGui_ImplGC_CheckKey(kb, last_kb, KEY_LEFTWINDOWS,    ImGuiKey_LeftSuper,
+	                                                       ImGuiKey_ModSuper);
 	ImGui_ImplGC_CheckKey(kb, last_kb, KEY_SPACE,          ImGuiKey_Space);
-	ImGui_ImplGC_CheckKey(kb, last_kb, KEY_RIGHTWINDOWS,   ImGuiKey_RightSuper);
+	ImGui_ImplGC_CheckKey(kb, last_kb, KEY_RIGHTWINDOWS,   ImGuiKey_RightSuper,
+	                                                       ImGuiKey_ModSuper);
 	ImGui_ImplGC_CheckKey(kb, last_kb, KEY_MENU,           ImGuiKey_Menu);
 	ImGui_ImplGC_CheckKey(kb, last_kb, KEY_LEFTARROW,      ImGuiKey_LeftArrow);
 	ImGui_ImplGC_CheckKey(kb, last_kb, KEY_DOWNARROW,      ImGuiKey_DownArrow);
@@ -306,6 +299,39 @@ static void ImGui_ImplGC_PollPad(s32 chan)
 	bd->last_pad[chan] = pad;
 }
 
+static void ImGui_ImplGC_TextForKeys(int ch, int key)
+{
+	if (ImGui::IsKeyPressed(key, true))
+		ImGui::GetIO().AddInputCharacter(ch);
+}
+
+static void ImGui_ImplGC_TextForKeys(int ch, int key_start, int key_end)
+{
+	for (auto key = key_start; key <= key_end; key++)
+		ImGui_ImplGC_TextForKeys(key - key_start + ch, key);
+}
+
+static void ImGui_ImplGC_TextForKeys(const char *str, int key_start, int key_end)
+{
+	for (auto key = key_start; key <= key_end; key++)
+		ImGui_ImplGC_TextForKeys(str[key - key_start], key);
+}
+
+static void ImGui_ImplGC_AddTextEvents()
+{
+	ImGui_ImplGC_TextForKeys(' ', ImGuiKey_Space);
+
+	if (ImGui::IsKeyDown(ImGuiKey_ModShift)) {
+		ImGui_ImplGC_TextForKeys('A',            ImGuiKey_A,          ImGuiKey_Z);
+		ImGui_ImplGC_TextForKeys(")!@#$%^&*(",   ImGuiKey_0,          ImGuiKey_9);
+		ImGui_ImplGC_TextForKeys("\"<_>?:+{|}~", ImGuiKey_Apostrophe, ImGuiKey_GraveAccent);
+	} else {
+		ImGui_ImplGC_TextForKeys('a', ImGuiKey_A, ImGuiKey_Z);
+		ImGui_ImplGC_TextForKeys('0', ImGuiKey_0, ImGuiKey_9);
+		ImGui_ImplGC_TextForKeys("',-./;=[\\]`", ImGuiKey_Apostrophe, ImGuiKey_GraveAccent);
+	}
+}
+
 void ImGui_ImplGC_NewFrame()
 {
 	auto *bd = ImGui_ImplGC_GetBackendData();
@@ -315,4 +341,6 @@ void ImGui_ImplGC_NewFrame()
 		ImGui_ImplGC_PollPad(chan);
 		ImGui_ImplGC_PollKeyboard(chan);
 	}
+
+	ImGui_ImplGC_AddTextEvents();
 }

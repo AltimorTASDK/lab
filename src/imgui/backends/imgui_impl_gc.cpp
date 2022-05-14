@@ -3,8 +3,6 @@
 
 #include "imgui.h"
 #include "imgui_impl_gc.h"
-#include "os/context.h"
-#include "os/os.h"
 #include "os/serial.h"
 #include "hsd/pad.h"
 #include "util/vector.h"
@@ -102,16 +100,11 @@ static void ImGui_ImplGC_CheckKey(const SIKeyboard &kb, const SIKeyboard &last_k
 	}
 }
 
-static void ImGui_ImplGC_PollKeyboardCallback(s32 chan, u32 status)
+static void ImGui_ImplGC_CheckKeyboard(s32 chan)
 {
 	auto *bd = ImGui_ImplGC_GetBackendData();
 	const auto &kb = bd->keyboard[chan];
 	const auto &last_kb = bd->last_keyboard[chan];
-
-	// Save FPU context so we can use the FPU from an interrupt
-	OSContext context;
-	PPCMtmsr(PPCMfmsr() | MSR_FP);
-	OSSaveFPUContext(&context);
 
 	// Some of these are mapped differently due to keyboard layout
 	ImGui_ImplGC_CheckKey(kb, last_kb, KEY_HOME,           ImGuiKey_Home);
@@ -201,9 +194,6 @@ static void ImGui_ImplGC_PollKeyboardCallback(s32 chan, u32 status)
 	ImGui_ImplGC_CheckKey(kb, last_kb, KEY_ENTER,          ImGuiKey_Enter);
 
 	bd->last_keyboard[chan] = kb;
-
-	OSLoadFPUContext(&context);
-	PPCMtmsr(PPCMfmsr() & ~MSR_FP);
 }
 
 static void ImGui_ImplGC_PollKeyboard(s32 chan)
@@ -211,13 +201,17 @@ static void ImGui_ImplGC_PollKeyboard(s32 chan)
 	auto *bd = ImGui_ImplGC_GetBackendData();
 
 	if (SI_GetType(chan) != SI_GC_KEYBOARD) {
+		bd->keyboard[chan]      = { 0 };
 		bd->last_keyboard[chan] = { 0 };
 		return;
 	}
 
+	// Request keyboard inputs
 	auto cmd_direct = 0x54000000;
 	SI_Transfer(chan, &cmd_direct, 1, &bd->keyboard[chan], sizeof(SIKeyboard),
-	            ImGui_ImplGC_PollKeyboardCallback, 0);
+	            [](s32, u32) {}, 0);
+
+	ImGui_ImplGC_CheckKeyboard(chan);
 }
 
 static void ImGui_ImplGC_CheckButton(const ImGui_ImplGC_Pad &pad, int button, int imgui_key)

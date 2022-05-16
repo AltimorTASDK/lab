@@ -28,47 +28,49 @@ public:
 	virtual bool set_value(const char *str) = 0;
 };
 
-template<typename T, string_literal name>
+template<typename T>
 class cvar : public cvar_base {
-	struct cvar_callbacks {
-		bool(*validate)(cvar *cv, const T &new_value);
-		bool(*set)(cvar *cv, const T &new_value);
+	struct cvar_params {
+		T value = {};
+		T min = std::numeric_limits<T>::lowest();
+		T max = std::numeric_limits<T>::max();
+		bool(*validate)(T value);
+		void(*set)(T value);
 	};
 
+	const char *name;
+	const cvar_params params;
 	T value;
-	const cvar_callbacks callbacks;
-	const T min_value = std::numeric_limits<T>::lowest();
-	const T max_value = std::numeric_limits<T>::max();
 
 public:
-	cvar(T value = {}, const cvar_callbacks &callbacks = {}) :
-		cvar_base(hash<name>()),
-		value(value),
-		callbacks(callbacks)
+	template<size_t N>
+	cvar(const char (&name)[N], const cvar_params &params = {}) :
+		cvar_base(hash(name)),
+		name(name),
+		params(params),
+		value(params.value)
 	{
 	}
 
-	cvar(T value, T min_value, T max_value, const cvar_callbacks &callbacks = {}) :
-		cvar(value, callbacks),
-		min_value(min_value),
-		max_value(max_value)
+	T get()
 	{
+		return value;
 	}
 
 	const char *get_name() override
 	{
-		return name.value;
+		return name;
 	}
 
 	bool set_value(const char *str) override
 	{
-		const auto value = [&] {
+		char *end;
+
+		const auto new_value = [&] {
 			if constexpr (std::is_integral_v<T>)
 				return strtol(str, &end, 0);
 			else if constexpr (std::is_floating_point_v<T>)
 				return strtod(str, &end);
-			else
-				static_assert(false, "Unsupported cvar type");
 		}();
 
 		if (*end != '\0') {
@@ -80,11 +82,24 @@ public:
 			return false;
 		}
 
-		if (value < min_value || value > max_value) {
-			console::printf("Expected value in range [%d, %d].\n", min_value,
-			                                                       max_value);
+		if (new_value < params.min || new_value > params.max) {
+			if constexpr (std::is_integral_v<T>) {
+				console::printf("Expected value in range [%ld, %ld].\n",
+				                params.min, params.max);
+			} else if constexpr (std::is_floating_point_v<T>) {
+				console::printf("Expected value in range [%lf, %lf].\n",
+				                params.min, params.max);
+			}
 			return false;
 		}
+
+		if (params.validate != nullptr && !params.validate((T)new_value))
+			return false;
+
+		value = (T)new_value;
+
+		if (params.set != nullptr)
+			params.set(value);
 
 		return true;
 	}

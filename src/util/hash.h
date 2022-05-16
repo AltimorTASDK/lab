@@ -20,6 +20,19 @@ consteval unsigned int hash()
 	return hash;
 }
 
+// Consteval FNV1a hash
+template<size_t size>
+consteval unsigned int hash(const char (&str)[size])
+{
+	auto hash = fnv1a::offset_basis;
+
+	for_range<size>([&]<size_t ...N> {
+		((hash = (hash ^ str[N]) * fnv1a::prime), ...);
+	});
+
+	return hash;
+}
+
 // Runtime FNV1a hash
 inline unsigned int hash(const char *str)
 {

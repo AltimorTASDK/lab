@@ -37,21 +37,39 @@ void console::printf(const char *fmt, ...)
 
 static void parse_line()
 {
-        if (line_buf[0] == '\0')
+        char arg_buf[LINE_SIZE];
+        strcpy(arg_buf, line_buf);
+
+        auto argc = 0;
+        char *argv[LINE_SIZE / 2];
+        auto *arg_ptr = arg_buf;
+
+        while (arg_ptr != nullptr) {
+                // Null out spaces to separate args
+                while (*arg_ptr == ' ')
+                        *arg_ptr++ = '\0';
+
+                if (*arg_ptr == '\0')
+                        break;
+
+                if (*arg_ptr == '\"') {
+                        // TODO: Escaping
+                        argv[argc++] = arg_ptr + 1;
+                        arg_ptr = strchr(arg_ptr + 1, '\"');
+                        if (arg_ptr != nullptr)
+                                arg_ptr++;
+                } else {
+                        argv[argc++] = arg_ptr;
+                        arg_ptr = strchr(arg_ptr + 1, ' ');
+                }
+        }
+
+        if (argc == 0)
                 return;
 
         console::printf(">%s", line_buf);
 
-        auto argc = 0;
-        auto *line_ptr = line_buf;
-
-        char cmd[33];
-        if (sscanf(line_buf, "%32s", cmd) != 1) {
-                console::print("Failed to parse command");
-                return;
-        }
-
-        if (!events::console::cmd.fire(hash(cmd), line_buf))
+        if (!events::console::cmd.fire(hash(argv[0]), argc, argv))
                 console::printf("Unrecognized command \"%s\"", cmd);
 }
 

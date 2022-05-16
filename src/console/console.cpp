@@ -41,7 +41,7 @@ static void parse_line()
         strcpy(arg_buf, line_buf);
 
         auto argc = 0;
-        char *argv[LINE_SIZE / 2];
+        const char *argv[LINE_SIZE / 2];
         auto *arg_ptr = arg_buf;
 
         while (arg_ptr != nullptr) {

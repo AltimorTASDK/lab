@@ -22,7 +22,7 @@ static bool console_open;
 
 void console::print(const char *line)
 {
-        strlcpy(history_buf[history_idx], line, HISTORY_LINES);
+        strlcpy(history_buf[history_idx], line, LINE_SIZE);
         history_idx = (history_idx + 1) % HISTORY_LINES;
 }
 

@@ -32,6 +32,13 @@ public:
 			cv = cv->next;
 			return *this;
 		}
+
+		cvar_base *operator*()
+		{
+			return cv;
+		}
+
+		bool operator<=>(const iterator &other) const = default;
 	};
 
 private:

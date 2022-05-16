@@ -1,43 +1,31 @@
 #include "os/serial.h"
 #include "os/vi.h"
-#include "input/poll.h"
 #include "console/console.h"
+#include "console/cvar.h"
+#include "input/poll.h"
 #include "util/hash.h"
 #include "util/hooks.h"
 #include <cstdio>
 #include <cstring>
 
-static u32 polling_mult = 1;
 static s32 poll_index[4];
 static u32 last_retrace_count[4];
 static SIPadStatus status[4];
 
-static event_handler cmd_handler(&events::console::cmd, [](unsigned int cmd_hash, const char *line)
-{
-	if (cmd_hash != hash<"polling_mult">())
-		return false;
-
-	int new_mult;
-	if (sscanf(line, "%*32s %d", &new_mult) != 1 || new_mult < 1 || new_mult > 8) {
-		console::print("Usage: polling_mult <1-8>");
-		return true;
-	}
-
-	polling_mult = new_mult;
-
-	// Force polling rate update
-	const auto sipoll = Si.poll.raw;
-	SI_SetSamplingRate(16);
-	SI_DisablePolling(0b11110000 << 24);
-	SI_EnablePolling(sipoll << 24);
-
-	return true;
-});
+static console::cvar<int> polling_mult("polling_mult", {
+	.value = 1, .min = 1, .max = 8,
+	.set = [](int) {
+		// Force polling rate update
+		const auto sipoll = Si.poll.raw;
+		SI_SetSamplingRate(16);
+		SI_DisablePolling(0b11110000 << 24);
+		SI_EnablePolling(sipoll << 24);
+	}});
 
 HOOK(SI_SetXY, [&](u16 line, u8 cnt)
 {
 	// Change poll interval so the middle poll happens when it would on vanilla
-	original((u16)(line / polling_mult), (u8)(cnt * polling_mult));
+	original((u16)(line / polling_mult.get()), (u8)(cnt * polling_mult.get()));
 });
 
 HOOK(SI_GetResponseRaw, [&](s32 chan)
@@ -68,7 +56,7 @@ HOOK(SI_GetResponse, [&](s32 chan, void *buf)
 {
 	// Use 120Hz polls
 	const auto result = original(chan, buf);
-	if (result && polling_mult != 1)
+	if (result && polling_mult.get() != 1)
 		*(SIPadStatus*)buf = status[chan];
 
 	return result;

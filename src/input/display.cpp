@@ -2,9 +2,9 @@
 #include "os/os.h"
 #include "os/serial.h"
 #include "hsd/pad.h"
+#include "console/console.h"
 #include "imgui/draw.h"
 #include "input/poll.h"
-#include "ui/console.h"
 #include <cstring>
 #include <imgui.h>
 #include <ogc/machine/asm.h>

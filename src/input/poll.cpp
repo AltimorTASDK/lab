@@ -1,7 +1,7 @@
 #include "os/serial.h"
 #include "os/vi.h"
 #include "input/poll.h"
-#include "ui/console.h"
+#include "console/console.h"
 #include "util/hash.h"
 #include "util/hooks.h"
 #include <cstdio>

@@ -1,4 +1,4 @@
-#include "ui/console.h"
+#include "console/console.h"
 #include "util/hash.h"
 #include <cstring>
 

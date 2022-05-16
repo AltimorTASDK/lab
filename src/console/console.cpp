@@ -3,10 +3,10 @@
 #include "hsd/gobj.h"
 #include "hsd/video.h"
 #include "melee/menu.h"
+#include "console/console.h"
 #include "event/event.h"
 #include "imgui/draw.h"
 #include "util/hash.h"
-#include "ui/console.h"
 #include <cstdarg>
 #include <cstdio>
 #include <imgui.h>
@@ -41,6 +41,9 @@ static void parse_line()
                 return;
 
         console::printf(">%s", line_buf);
+
+        auto argc = 0;
+        auto *line_ptr = line_buf;
 
         char cmd[33];
         if (sscanf(line_buf, "%32s", cmd) != 1) {

@@ -10,13 +10,43 @@ namespace console {
 
 class cvar_base {
 public:
+	struct iterator {
+		cvar_base *cv;
+
+		iterator(cvar_base *cv) : cv(cv)
+		{
+		}
+
+		iterator &begin()
+		{
+			return *this;
+		}
+
+		iterator end()
+		{
+			return iterator(nullptr);
+		}
+
+		iterator &operator++()
+		{
+			cv = cv->next;
+			return *this;
+		}
+	};
+
+private:
 	inline static cvar_base *head;
 	cvar_base *next;
 
+public:
 	const unsigned int name_hash;
+	const char *const name;
 
 protected:
-	cvar_base(unsigned int name_hash) : name_hash(name_hash)
+	template<size_t N>
+	cvar_base(const char (&name)[N]) :
+		name_hash(hash(name)),
+		name(name)
 	{
 		// Link into list
 		next = head;
@@ -24,7 +54,11 @@ protected:
 	}
 
 public:
-	virtual const char *get_name() = 0;
+	static iterator iterate()
+	{
+		return iterator(head);
+	}
+
 	virtual bool set_value(const char *str) = 0;
 };
 
@@ -38,15 +72,13 @@ class cvar : public cvar_base {
 		void(*set)(T value);
 	};
 
-	const char *name;
 	const cvar_params params;
 	T value;
 
 public:
 	template<size_t N>
 	cvar(const char (&name)[N], const cvar_params &params = {}) :
-		cvar_base(hash(name)),
-		name(name),
+		cvar_base(name),
 		params(params),
 		value(params.value)
 	{
@@ -55,11 +87,6 @@ public:
 	T get()
 	{
 		return value;
-	}
-
-	const char *get_name() override
-	{
-		return name;
 	}
 
 	bool set_value(const char *str) override

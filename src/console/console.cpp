@@ -37,6 +37,8 @@ void console::printf(const char *fmt, ...)
 
 static void parse_line()
 {
+        console::printf(">%s", line_buf);
+
         char arg_buf[LINE_SIZE];
         strcpy(arg_buf, line_buf);
 
@@ -66,8 +68,6 @@ static void parse_line()
 
         if (argc == 0)
                 return;
-
-        console::printf(">%s", line_buf);
 
         if (!events::console::cmd.fire(hash(argv[0]), argc, argv))
                 console::printf("Unrecognized command \"%s\"", argv[0]);

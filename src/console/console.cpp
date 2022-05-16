@@ -70,7 +70,7 @@ static void parse_line()
         console::printf(">%s", line_buf);
 
         if (!events::console::cmd.fire(hash(argv[0]), argc, argv))
-                console::printf("Unrecognized command \"%s\"", cmd);
+                console::printf("Unrecognized command \"%s\"", argv[0]);
 }
 
 static int text_callback(ImGuiInputTextCallbackData *data)

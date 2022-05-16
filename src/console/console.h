@@ -1,3 +1,5 @@
+#pragma once
+
 #include "event/event.h"
 
 namespace events::console {

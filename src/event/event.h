@@ -1,7 +1,14 @@
 #pragma once
 
+#include "util/preprocessor.h"
 #include <type_traits>
 #include <utility>
+
+#define EVENT_HANDLER(event, ...)                                                                  \
+	namespace CONCAT(_event_handler_, __COUNTER__) {                                           \
+	static event_handler handler(&(event), (__VA_ARGS__));                                     \
+	}                                                                                          \
+	static_assert(true) // Force semicolon
 
 template<typename callback_type>
 struct event;

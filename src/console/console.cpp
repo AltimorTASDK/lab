@@ -78,7 +78,7 @@ static int text_callback(ImGuiInputTextCallbackData *data)
         return data->EventChar != '`' && data->EventChar != '~';
 }
 
-static event_handler draw_handler(&events::imgui::draw, []()
+EVENT_HANDLER(events::imgui::draw, []()
 {
         if (ImGui::IsKeyPressed(ImGuiKey_GraveAccent, false))
                 console_open = !console_open;

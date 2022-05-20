@@ -15,18 +15,20 @@ struct event<ret(args...)> {
 
 	const event_handler<callback_type> *head;
 
-	bool fire(args ...va)
+	ret fire(args ...va)
 	{
 		for (const auto *handler = head; handler != nullptr; handler = handler->next) {
 			if constexpr (std::is_same_v<ret, void>) {
 				handler->handle(std::forward<args>(va)...);
 			} else {
-				if (handler->handle(std::forward<args>(va)...))
-					return true;
+				const auto result = handler->handle(std::forward<args>(va)...);
+				if (result)
+					return result;
 			}
 		}
 
-		return false;
+		if constexpr (!std::is_same_v<ret, void>)
+			return ret {};
 	}
 };
 

@@ -13,7 +13,7 @@ static u32 last_retrace_count[4];
 static SIPadStatus status[4];
 
 static console::cvar<int> polling_mult("polling_mult", {
-	.value = 1, .min = 1, .max = 8,
+	.value = 1, .min = 1, .max = 16,
 	.set = [](int) {
 		// Force polling rate update
 		const auto sipoll = Si.poll.raw;

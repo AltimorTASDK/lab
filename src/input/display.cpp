@@ -96,8 +96,8 @@ static const auto airdodge = action_type {
 		if (!player->airborne && player->action_state != AS_KneeBend)
 			return 0;
 
-		return ((input.pressed & Button_L)    ? (1 << 0) : 0) |
-		       ((input.pressed & Button_R)    ? (1 << 1) : 0);
+		return ((input.pressed & Button_L) ? (1 << 0) : 0) |
+		       ((input.pressed & Button_R) ? (1 << 1) : 0);
 	},
 	.success_predicate = [](const Player *player) {
 		return player->action_state == AS_EscapeAir;
@@ -121,6 +121,44 @@ EVENT_HANDLER(events::input::poll, [](s32 chan, const SIPadStatus &status)
 	if (status.errstat == 0)
 		input_buffer[chan].add({ .qwrite = HSD_PadLibData.qwrite, .status = status });
 });
+
+static u32 detect_action_for_input(const Player *player, const processed_input &input,
+                                   size_t poll_index, const action_type &type, u32 input_mask)
+{
+	const auto mask = type.input_predicate(player, input) & input_mask;
+
+	if (mask == 0)
+		return 0;
+
+	auto frame_delta = -1.f;
+
+	if (type.base_action != nullptr) {
+		// Find base action in buffer
+		for (size_t offset = 0; offset < action_buffer.stored(); offset++) {
+			const auto *action = action_buffer.head(offset);
+
+			if (action->type == type.base_action) {
+				const auto poll_delta = poll_index - action->poll_index;
+				frame_delta = (float)poll_delta / Si.poll.y;
+				break;
+			}
+		}
+	}
+
+	const auto new_action = action {
+		.type        = &type,
+		.frame_delta = frame_delta,
+		.poll_index  = poll_index,
+		.frame       = VIGetRetraceCount(),
+		.port        = player->port
+	};
+
+	// Add the action multiple times if triggered multiple times in one poll
+	for (auto count = 0; count < __builtin_popcount(mask); count++)
+		action_buffer.add(new_action);
+
+	return mask;
+}
 
 EVENT_HANDLER(events::player::think::input::pre, [](Player *player)
 {
@@ -175,34 +213,9 @@ EVENT_HANDLER(events::player::think::input::pre, [](Player *player)
 
 		for (size_t type_index = 0; type_index < action_type_count; type_index++) {
 			const auto &type = action_types[type_index];
-			const auto mask = type.input_predicate(player, processed);
-
-			if ((mask & ~detected_inputs[type_index]) == 0)
-				continue;
-
+			const auto mask = detect_action_for_input(player, processed, index, type,
+			                                          ~detected_inputs[type_index]);
 			detected_inputs[type_index] |= mask;
-
-			auto frame_delta = -1.f;
-
-			if (type.base_action != nullptr) {
-				for (size_t offset = 0; offset < action_buffer.stored(); offset++) {
-					const auto *action = action_buffer.head(offset);
-
-					if (action->type == type.base_action) {
-						const auto poll_delta = index - action->poll_index;
-						frame_delta = (float)poll_delta / Si.poll.y;
-						break;
-					}
-				}
-			}
-
-			action_buffer.add({
-				.type        = &type,
-				.frame_delta = frame_delta,
-				.poll_index  = index,
-				.frame       = VIGetRetraceCount(),
-				.port        = player->port
-			});
 		}
 	}
 });
@@ -245,11 +258,12 @@ EVENT_HANDLER(events::imgui::draw, []()
 		ImGui::TableNextColumn();
                 ImGui::TextUnformatted(action->type->name);
 
-		OSReport("drawing %s\n", action->type->name);
 		if (action->frame_delta != -1.f) {
 			ImGui::TableNextColumn();
 			ImGui::Text("%f", action->frame_delta);
 		}
+
+		OSReport("drawing %s %f\n", action->type->name, action->frame_delta);
 	}
 
 	ImGui::EndTable();

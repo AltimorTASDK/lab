@@ -9,6 +9,11 @@ class ring_buffer {
 	ssize_t next_index = 0;
 
 public:
+	const ssize_t size()
+	{
+		return N;
+	}
+
 	bool is_valid_index(ssize_t index)
 	{
 		return index >= std::max(0, next_index - N) && index < next_index;

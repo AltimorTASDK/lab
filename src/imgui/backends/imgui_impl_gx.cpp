@@ -25,7 +25,8 @@ static ImGui_ImplGX_Data *ImGui_ImplGX_GetBackendData()
 bool ImGui_ImplGX_Init()
 {
 	auto &io = ImGui::GetIO();
-	IM_ASSERT(io.BackendRendererUserData == nullptr && "Already initialized a renderer backend!");
+	IM_ASSERT(io.BackendRendererUserData == nullptr &&
+	          "Already initialized a renderer backend!");
 
 	// Setup backend capabilities flags
 	auto *bd = IM_NEW(ImGui_ImplGX_Data)();

@@ -16,6 +16,7 @@
 #include "util/melee/pad.h"
 #include <imgui.h>
 #include <ogc/machine/asm.h>
+#include <tuple>
 
 constexpr auto INPUT_BUFFER_SIZE = MAX_POLLS_PER_FRAME * PAD_QNUM;
 constexpr auto ACTION_HISTORY = 32;
@@ -189,12 +190,9 @@ static void detect_action_for_input(const Player *player, const processed_input 
 	}
 }
 
-EVENT_HANDLER(events::player::think::input::pre, [](Player *player)
+static std::tuple<size_t, size_t> find_polls_for_frame(u8 port)
 {
-	if (Player_IsCPU(player))
-		return;
-
-	const auto &buffer = input_buffer[player->port];
+	const auto &buffer = input_buffer[port];
 
 	// Only use polls corresponding to this frame
 	const auto queue_index = mod(HSD_PadLibData.qread - 1, PAD_QNUM);
@@ -226,14 +224,24 @@ EVENT_HANDLER(events::player::think::input::pre, [](Player *player)
 
 	if (end_index == invalid_index) {
 		OSReport("Failed to find polls corresponding to current frame\n");
-		return;
+		return std::make_tuple(1, 0);
 	}
+
+	return std::make_tuple(start_index, end_index);
+}
+
+EVENT_HANDLER(events::player::think::input::pre, [](Player *player)
+{
+	if (Player_IsCPU(player))
+		return;
 
 	// Store masks for which input types were detected for each action type
 	u32 detected_inputs[action_type_count] = { 0 };
 
+	auto [start_index, end_index] = find_polls_for_frame(player->port);
+
 	for (auto poll_index = start_index; poll_index <= end_index; poll_index++) {
-		const auto *input = buffer.get(poll_index);
+		const auto *input = input_buffer[player->port].get(poll_index);
 
 		if (input == nullptr)
 			continue;

@@ -5,6 +5,7 @@
 #include "melee/action_state.h"
 #include "melee/constants.h"
 #include "melee/player.h"
+#include "melee/characters/fox.h"
 #include "console/console.h"
 #include "match/events.h"
 #include "imgui/events.h"
@@ -108,22 +109,26 @@ bool is_airborne(const Player *player)
 	if (player->action_state == AS_KneeBend)
 		return true;
 
-	return !is_on_ledge(player) && player->phys.floor.line == NO_LINE && player->airborne;
+	return !is_on_ledge(player) && player->airborne;
+}
+
+bool check_window(u8 hold_time, int window)
+{
+	// Check for special unheld value
+	return hold_time < window || hold_time == 0xFE;
 }
 
 bool check_up_smash(const Player *player, const processed_input &input)
 {
 	return input.stick.y >= plco->y_smash_threshold &&
-	       player->input.stick_y_hold_time < plco->y_smash_frames;
+	       check_window(player->input.stick_y_hold_time, plco->y_smash_frames);
 }
 
 bool check_down_b(const Player *player, const processed_input &input)
 {
 	switch (player->action_state) {
 	default:
-		if (is_on_ledge(player))
-			return false;
-		if (!player->airborne && std::abs(input.stick.x) >= plco->x_special_threshold)
+		if (!is_airborne(player) && std::abs(input.stick.x) >= plco->x_special_threshold)
 			return false;
 	case AS_SquatWait:
 	case AS_SquatRv:
@@ -131,8 +136,13 @@ bool check_down_b(const Player *player, const processed_input &input)
 	}
 }
 
-static const action_type jump = {
+extern const action_type shine;
+
+const action_type jump = {
 	.name = "Jump",
+	.is_base_action = [](const action_entry *action) {
+		return action->type == &shine;
+	},
 	.state_predicate = [](const Player *player) {
 		return !is_airborne(player);
 	},
@@ -150,7 +160,7 @@ static const action_type jump = {
 	.input_names = { "X", "Y", "Up" }
 };
 
-static const action_type airdodge = {
+const action_type airdodge = {
 	.name = "Air Dodge",
 	.plinkable = true,
 	.requires_base_action = true,
@@ -167,11 +177,34 @@ static const action_type airdodge = {
 	.input_names = { "L", "R" }
 };
 
+const action_type shine = {
+	.name = "Shine",
+	.is_base_action = [](const action_entry *action) {
+		return action->type == &jump;
+	},
+	.state_predicate = [](const Player *player) {
+		return !is_on_ledge(player);
+	},
+	.input_predicate = [](const Player *player, const processed_input &input) {
+		return bools_to_mask(check_down_b(player, input));
+	},
+	.success_predicate = [](const Player *player) {
+		return player->action_state == AS_Fox_SpecialLwStart ||
+		       player->action_state == AS_Fox_SpecialAirLwStart;
+	},
+	.end_predicate = [](const Player *player) {
+		return player->action_state < AS_Fox_SpecialLwStart ||
+		       player->action_state > AS_Fox_SpecialAirLwTurn;
+	},
+	.input_names = { nullptr }
+};
+
 } // action_type_definitions
 
 static const action_type *action_types[] = {
 	&action_type_definitions::jump,
 	&action_type_definitions::airdodge,
+	&action_type_definitions::shine
 };
 
 constexpr auto action_type_count = std::extent_v<decltype(action_types)>;

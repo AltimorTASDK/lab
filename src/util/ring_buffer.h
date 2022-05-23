@@ -32,6 +32,11 @@ public:
 		return std::min(count(), N);
 	}
 
+	void clear()
+	{
+		next_index = 0;
+	}
+
 	bool is_valid_index(size_t index) const
 	{
 		// Relies on unsigned overflow

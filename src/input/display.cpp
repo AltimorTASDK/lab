@@ -58,6 +58,8 @@ struct action_type {
 	int(*input_predicate)(const Player *player, const processed_input &input);
 	// Predicate to detect whether the action succeeded (after PlayerThink_Input)
 	bool(*success_predicate)(const Player *player);
+	// Predicate to detect when this can no longer be used as a valid base action
+	bool(*end_predicate)(const Player *player);
 	// Array of input names corresponding to bits in mask returned by input_predicate
 	const char *input_names[];
 };
@@ -72,6 +74,8 @@ struct action {
 	u32 frame;
 	// Bit returned by action_type::input_predicate
 	u8 input_type;
+	// Whether this can still be used as a valid base action
+	bool active = true;
 	bool success = false;
 	u8 port;
 };
@@ -96,6 +100,9 @@ static const action_type jump = {
 	},
 	.success_predicate = [](const Player *player) {
 		return player->action_state == AS_KneeBend;
+	},
+	.end_predicate = [](const Player *player) {
+		return !player->airborne && player->action_state != AS_KneeBend;
 	},
 	.input_names = { "X", "Y", "Up" }
 };
@@ -167,7 +174,7 @@ static void detect_action_for_input(const Player *player, const processed_input 
 		for (size_t offset = 0; offset < action_buffer.stored(); offset++) {
 			const auto *action = action_buffer.head(offset);
 
-			if (action->type == type.base_action) {
+			if (action->type == type.base_action && action->active) {
 				base_action = action;
 				break;
 			}
@@ -262,12 +269,22 @@ EVENT_HANDLER(events::player::think::input::post, [](Player *player)
 
 	const auto port = player->port;
 
-	// Figure out which actions succeeded
-	for (; last_confirmed_action[port] < action_buffer.count(); last_confirmed_action[port]++) {
-		auto *action = action_buffer.get(last_confirmed_action[port]);
+	for (size_t offset = 0; offset < action_buffer.stored(); offset++) {
+		const auto index = action_buffer.tail_index(offset);
+		auto *action = action_buffer.get(index);
 
-		if (action->port == port && action->type->success_predicate(player))
-			action->success = true;
+		if (action->port != port)
+			continue;
+
+		// Check if action can still be used as base
+		if (action->active && action->type->end_predicate != nullptr)
+			action->active = !action->type->end_predicate(player);
+
+		// Figure out which actions succeeded
+		if (index > last_confirmed_action[port]) {
+			action->success = action->type->success_predicate(player);
+			last_confirmed_action[port] = index;
+		}
 	}
 });
 

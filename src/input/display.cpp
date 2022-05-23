@@ -18,7 +18,7 @@
 #include <ogc/machine/asm.h>
 
 constexpr auto INPUT_BUFFER_SIZE = MAX_POLLS_PER_FRAME * PAD_QNUM;
-constexpr auto ACTION_HISTORY = 10;
+constexpr auto ACTION_HISTORY = 16;
 constexpr auto ACTION_DISPLAY_TIME = 240;
 
 struct saved_input {

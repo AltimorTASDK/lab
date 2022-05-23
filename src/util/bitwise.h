@@ -4,5 +4,7 @@
 constexpr auto bools_to_mask(auto ...values)
 {
 	auto bit = 0;
-	return ((values ? (1 << bit++) : 0) | ...);
+	auto result = 0;
+	((result |= values ? (1 << bit) : 0, bit++), ...);
+	return result;
 }

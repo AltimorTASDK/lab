@@ -9,17 +9,22 @@ class ring_buffer {
 	ssize_t next_index = 0;
 
 public:
-	const ssize_t size()
+	ssize_t size() const
 	{
 		return N;
 	}
 
-	bool is_valid_index(ssize_t index)
+	ssize_t count() const
+	{
+		return next_index;
+	}
+
+	bool is_valid_index(ssize_t index) const
 	{
 		return index >= std::max(0, next_index - N) && index < next_index;
 	}
 
-	const T *get(ssize_t index)
+	const T *get(ssize_t index) const
 	{
 		return is_valid_index(index) ? &data[mod(index, N)] : nullptr;
 	}
@@ -38,13 +43,8 @@ public:
 		data[mod(next_index++, N)] = value;
 	}
 
-	const ssize_t head_index()
+	const T *head(ssize_t offset = 0) const
 	{
-		return next_index - 1;
-	}
-
-	const T *head(ssize_t offset = 0)
-	{
-		return get(head_index() - offset);
+		return get(next_index - 1 - offset);
 	}
 };

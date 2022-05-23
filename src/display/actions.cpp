@@ -198,7 +198,7 @@ static void detect_action_for_input(const Player *player, const processed_input 
 		return;
 
 	const action_entry *base_action = nullptr;
-	auto check_state = true;
+	auto plinked = false;
 
 	// Find base action in buffer
 	for (size_t offset = 0; offset < action_buffer.stored(); offset++) {
@@ -206,31 +206,26 @@ static void detect_action_for_input(const Player *player, const processed_input 
 
 		if (action->type == type.base_action && base_action == nullptr) {
 			// Count the 2nd input in a plink even if the base action ended
-			if (action->active || !check_state)
+			if (action->active || plinked)
 				base_action = action;
 		}
 
-		if (!type.plinkable || !check_state)
-			continue;
-
-		// Don't check state for plinked inputs
-		const auto poll_delta = poll_index - action->poll_index;
-		const auto frame_delta = (float)poll_delta / Si.poll.y;
-		check_state = frame_delta > PLINK_WINDOW;
+		if (type.plinkable && !plinked) {
+			// Check if this is the 2nd input in a plink
+			const auto poll_delta = poll_index - action->poll_index;
+			const auto frame_delta = (float)poll_delta / Si.poll.y;
+			plinked = frame_delta <= PLINK_WINDOW;
+		}
 	}
 
 	if (type.base_action != nullptr) {
 		// Base action is required
 		if (base_action == nullptr)
 			return;
-
-		// Don't check state if base input on same frame
-		if (detected_inputs[base_action->type->index] != 0)
-			check_state = false;
 	}
 
-	// Check action prerequisites unless otherwise specified
-	if (check_state && type.state_predicate != nullptr && !type.state_predicate(player))
+	// Check action prerequisites unless plinked
+	if (!plinked && type.state_predicate != nullptr && !type.state_predicate(player))
 		return;
 
 	detected_inputs[type_index] |= mask;

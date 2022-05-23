@@ -37,7 +37,7 @@ GENDIR  := build/gen
 SRCDIR  := src $(GENDIR) $(BASEMOD)/src
 
 OUTPUTMAP   = $(OBJDIR)/output.map
-LDFLAGS     = -nolibc -Wl,-Map=$(OUTPUTMAP) -Wl,--gc-sections -flto
+LDFLAGS     = -nolibc -Wl,-Map=$(OUTPUTMAP) -Wl,--gc-sections
 STATICLIBS := -lm
 
 MELEEMAP  = $(MELEELD:.ld=.map)
@@ -46,7 +46,7 @@ CFLAGS    = $(DEFINES) -mogc -mcpu=750 -meabi -mhard-float -Os \
             -Wall -Wno-switch -Wno-unused-value -Wconversion -Warith-conversion -Wno-multichar \
             -Wno-pointer-arith \
             -ffunction-sections -fdata-sections -mno-sdata \
-            -fno-builtin-sqrt -fno-builtin-sqrtf -flto
+            -fno-builtin-sqrt -fno-builtin-sqrtf
 ASFLAGS   = $(DEFINES) -Wa,-mregnames -Wa,-mgekko
 CXXFLAGS  = $(CFLAGS) -std=c++2b -fconcepts -fno-rtti -fno-exceptions
 INCLUDE  := $(foreach dir, $(SRCDIR), -I$(dir)) -I$(DEVKITPATH)/libogc/include -Isrc/libc
@@ -59,6 +59,8 @@ ifdef DEBUG
 CFLAGS  += -g
 else
 DEFINES += -DNDEBUG
+CFLAGS  += -flto
+LDFLAGS += -flto
 endif
 
 DOLFILE := $(ISODIR)/sys/main.dol

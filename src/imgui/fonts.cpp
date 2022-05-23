@@ -4,19 +4,26 @@
 
 #include "resources/fonts/cascadia_mono.ttf.h"
 
+// Unicode ranges
+const auto *glyphs = (const ImWchar*)u"\u0020\u00FF✔✔❌❌";
+
+template<size_t N>
+static ImFont *create_font(unsigned char (&data)[N], float size_pixels, ImFontConfig *config)
+{
+	return ImGui::GetIO().Fonts->AddFontFromMemoryTTF(data, N, size_pixels, config);
+}
+
 EVENT_HANDLER(events::imgui::init, []()
 {
 	auto &io = ImGui::GetIO();
 
-	ImFontConfig font_config;
-	font_config.FontDataOwnedByAtlas = false;
+	ImFontConfig config;
+	config.FontDataOwnedByAtlas = false;
+	config.GlyphRanges = glyphs;
 
-	auto *data = cascadia_mono_ttf_data;
-	const auto size = sizeof(cascadia_mono_ttf_data);
-
-	fonts::small  = io.Fonts->AddFontFromMemoryTTF(data, size, 12.f, &font_config);
-	fonts::medium = io.Fonts->AddFontFromMemoryTTF(data, size, 16.f, &font_config);
-	fonts::large  = io.Fonts->AddFontFromMemoryTTF(data, size, 20.f, &font_config);
+	fonts::small  = create_font(cascadia_mono_ttf_data, 12.f, &config);
+	fonts::medium = create_font(cascadia_mono_ttf_data, 16.f, &config);
+	fonts::large  = create_font(cascadia_mono_ttf_data, 20.f, &config);
 
 	io.FontDefault = fonts::medium;
 });

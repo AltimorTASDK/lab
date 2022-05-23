@@ -1,8 +1,5 @@
 #pragma once
 
-#include "util/math.h"
-#include <optional>
-
 template<typename T, size_t N>
 class ring_buffer {
 	T data[N];

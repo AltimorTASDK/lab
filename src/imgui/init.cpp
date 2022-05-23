@@ -1,3 +1,4 @@
+#include "imgui/events.h"
 #include "util/hooks.h"
 #include "imgui.h"
 #include "imgui/backends/imgui_impl_gc.h"

@@ -18,8 +18,7 @@
 #include <ogc/machine/asm.h>
 
 constexpr auto INPUT_BUFFER_SIZE = MAX_POLLS_PER_FRAME * PAD_QNUM;
-constexpr auto INPUT_SEQUENCE_SIZE = 20;
-constexpr auto INPUT_SEQUENCE_HISTORY = 10;
+constexpr auto ACTION_HISTORY = 10;
 
 struct saved_input {
 	u8 qwrite;
@@ -43,41 +42,41 @@ struct processed_input {
 	}
 };
 
-using input_predicate = bool(const Player *player, const processed_input &input);
-
-struct input_sequence_type {
-	// Action state to start sequence upon entering
-	u32 start_state;
-	// Predicate to detect input that started the sequence
-	input_predicate *start_predicate;
-	// Predicate to detect inputs that add to the sequence
-	input_predicate *followup_predicate;
+struct action_type {
+	const char *name;
+	// Predicate to detect state/inputs that trigger this action (before PlayerThink_Input)
+	bool(*input_predicate)(const Player *player, const processed_input &input);
+	// Predicate to detect whether the action succeeded (after PlayerThink_Input)
+	bool(*success_predicate)(const Player *player);
 };
 
-struct input_sequence {
-	const input_sequence_type *type;
+struct action {
+	const action_type *type;
+	u32 poll_num;
+	bool success = false;
 	u8 port;
-	u32 start_poll_num;
-	u32 start_retrace_count;
-	ring_buffer<const saved_input*, INPUT_SEQUENCE_SIZE> inputs;
 };
 
-static const input_sequence_type input_sequence_types[] = {
+static const action_type action_types[] = {
 	{
-		.start_state = AS_KneeBend,
-		.start_predicate = [](const Player *player, const processed_input &input) {
+		.name = "Jump",
+		.input_predicate = [](const Player *player, const processed_input &input) {
+			if (player->airborne)
+				return false;
+
 			return (input.pressed & (Button_X | Button_Y)) ||
 			       (input.stick.y >= plco->y_smash_threshold &&
 			        player->input.stick_y_hold_time < plco->y_smash_frames);
 		},
-		.followup_predicate = [](const Player *player, const processed_input &input) {
-			return input.pressed != 0;
+		.success_predicate = [](const Player *player) {
+			return player->action_state == AS_KneeBend;
 		}
 	}
 };
 
 static ring_buffer<saved_input, INPUT_BUFFER_SIZE> input_buffer[4];
-static ring_buffer<input_sequence, INPUT_SEQUENCE_HISTORY> input_sequences;
+static ring_buffer<action, ACTION_HISTORY> action_buffer;
+static u32 last_confirmed_action[4];
 
 EVENT_HANDLER(events::input::poll, [](s32 chan, const SIPadStatus &status)
 {
@@ -85,11 +84,16 @@ EVENT_HANDLER(events::input::poll, [](s32 chan, const SIPadStatus &status)
 		input_buffer[chan].add({ .qwrite = HSD_PadLibData.qwrite, .status = status });
 });
 
-static u32 find_sequence_start_poll(const Player *player, const input_sequence_type &type)
+EVENT_HANDLER(events::player::think::input::pre, [](Player *player)
 {
+	if (Player_IsCPU(player))
+		return;
+
 	const auto &buffer = input_buffer[player->port];
+
 	// Only use polls corresponding to this frame
 	const auto queue_index = mod(HSD_PadLibData.qread - 1, PAD_QNUM);
+
 	// Head index must be saved because the interrupt can change it
 	const auto head_index = buffer.head_index();
 	const auto stored = std::min(head_index + 1, buffer.capacity());
@@ -117,7 +121,7 @@ static u32 find_sequence_start_poll(const Player *player, const input_sequence_t
 
 	if (end_index == invalid_index) {
 		OSReport("Failed to find polls corresponding to current frame\n");
-		return head_index;
+		return;
 	}
 
 	for (auto index = start_index; index <= end_index; index++) {
@@ -126,34 +130,33 @@ static u32 find_sequence_start_poll(const Player *player, const input_sequence_t
 		if (input == nullptr)
 			continue;
 
-		if (type.start_predicate(player, processed_input(player, input->status)))
-			return index;
+		const auto processed = processed_input(player, input->status);
+
+		for (const auto &type : action_types) {
+			if (!type.input_predicate(player, processed))
+				continue;
+
+			action_buffer.add({
+				.type     = &type,
+				.poll_num = index,
+				.port     = player->port
+			});
+		}
 	}
+});
 
-	OSReport("Failed to find start of input sequence\n");
-	return head_index;
-}
-
-EVENT_HANDLER(events::player::as_change, [](Player *player, u32 old_state, u32 new_state)
+EVENT_HANDLER(events::player::think::input::post, [](Player *player)
 {
 	if (Player_IsCPU(player))
 		return;
 
-	for (const auto &type : input_sequence_types) {
-		if (type.start_state != new_state)
-			continue;
+	const auto port = player->port;
 
-		const auto start_poll = find_sequence_start_poll(player, type);
-		OSReport("input sequence started on poll %u\n", start_poll);
+	// Figure out which actions succeeded
+	for (; last_confirmed_action[port] < action_buffer.count(); last_confirmed_action[port]++) {
+		auto *action = action_buffer.get(last_confirmed_action[port]);
 
-		input_sequences.add({
-			.type                = &type,
-			.port                = player->port,
-			.start_poll_num      = start_poll,
-			.start_retrace_count = VIGetRetraceCount(),
-			.inputs              = { { input_buffer[player->port].get(start_poll) } }
-		});
-
-		return;
+		if (action != nullptr && action->type->success_predicate(player))
+			action->success = true;
 	}
 });

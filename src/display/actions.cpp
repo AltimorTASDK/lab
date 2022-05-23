@@ -22,7 +22,7 @@
 
 constexpr size_t INPUT_BUFFER_SIZE = MAX_POLLS_PER_FRAME * PAD_QNUM;
 constexpr size_t ACTION_BUFFER_SIZE = 32;
-constexpr size_t ACTION_HISTORY = 16;
+constexpr size_t ACTION_HISTORY = 10;
 
 struct saved_input {
 	u8 qwrite;
@@ -311,7 +311,7 @@ EVENT_HANDLER(events::imgui::draw, []()
 	                              | ImGuiWindowFlags_NoBackground
 	                              | ImGuiWindowFlags_AlwaysAutoResize);
 
-	ImGui::BeginTable("Inputs", 2, 0, {320, 480 - 60});
+	ImGui::BeginTable("Inputs", 3, 0, {640, 480});
 
 	const auto display_count = std::min(action_buffer.stored(), ACTION_HISTORY);
 
@@ -323,16 +323,29 @@ EVENT_HANDLER(events::imgui::draw, []()
                 ImGui::TableNextRow();
 		ImGui::TableNextColumn();
 
-		if (input_name != nullptr)
-			ImGui::Text("%s (%s)\n", action->type->name, input_name);
+		if (action->success)
+			ImGui::TextColored({.2f, 1.f, .2f, 1.f}, "✔");
 		else
-			ImGui::TextUnformatted(action->type->name);
+			ImGui::TextColored({1.f, .2f, .2f, 1.f}, "❌");
+
+		if (base_action != nullptr) {
+			ImGui::SameLine();
+			ImGui::Text("%s ->", base_action->type->name);
+		}
+
+		ImGui::SameLine();
+		ImGui::TextUnformatted(action->type->name);
+
+		if (input_name != nullptr) {
+			ImGui::SameLine();
+			ImGui::Text("(%s)", input_name);
+		}
 
 		if (base_action != nullptr) {
 			const auto poll_delta = action->poll_index - base_action->poll_index;
 			const auto frame_delta = (float)poll_delta / Si.poll.y;
 			ImGui::TableNextColumn();
-			ImGui::Text("%.02f", frame_delta);
+			ImGui::Text("%.02ff", frame_delta);
 		}
 	}
 

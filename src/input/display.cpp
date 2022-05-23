@@ -6,6 +6,7 @@
 #include "melee/constants.h"
 #include "melee/player.h"
 #include "console/console.h"
+#include "match/events.h"
 #include "imgui/events.h"
 #include "imgui/fonts.h"
 #include "input/poll.h"
@@ -20,7 +21,7 @@
 #include <tuple>
 
 constexpr size_t INPUT_BUFFER_SIZE = MAX_POLLS_PER_FRAME * PAD_QNUM;
-constexpr size_t ACTION_HISTORY = 32;
+constexpr size_t ACTION_BUFFER_SIZE = 32;
 constexpr size_t DISPLAYED_ACTIONS = 16;
 
 struct saved_input {
@@ -139,7 +140,7 @@ static const action_type *action_types[] = {
 
 constexpr auto action_type_count = std::extent_v<decltype(action_types)>;
 static ring_buffer<saved_input, INPUT_BUFFER_SIZE> input_buffer[4];
-static ring_buffer<action_entry, ACTION_HISTORY> action_buffer;
+static ring_buffer<action_entry, ACTION_BUFFER_SIZE> action_buffer;
 static unsigned int draw_frames;
 
 [[gnu::constructor]] static void set_action_type_indices()
@@ -340,4 +341,9 @@ EVENT_HANDLER(events::imgui::draw, []()
 	ImGui::End();
 
 	draw_frames++;
+});
+
+EVENT_HANDLER(events::match::exit, []()
+{
+	action_buffer.clear();
 });

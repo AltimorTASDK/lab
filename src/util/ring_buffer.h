@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <initializer_list>
 
 template<typename T, size_t N>
 class ring_buffer {
@@ -8,6 +9,14 @@ class ring_buffer {
 	size_t next_index = 0;
 
 public:
+	ring_buffer() = default;
+
+	ring_buffer(std::initializer_list<T> list)
+	{
+		for (const auto &value : list)
+			add(value);
+	}
+
 	size_t capacity() const
 	{
 		return N;

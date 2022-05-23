@@ -11,6 +11,7 @@
 #include "imgui/fonts.h"
 #include "input/poll.h"
 #include "player/events.h"
+#include "util/bitwise.h"
 #include "util/hooks.h"
 #include "util/math.h"
 #include "util/ring_buffer.h"
@@ -90,10 +91,15 @@ struct action_entry {
 
 namespace action_type_definitions {
 
-static bool check_up_smash(const Player *player, const processed_input &input)
+bool check_up_smash(const Player *player, const processed_input &input)
 {
 	return input.stick.y >= plco->y_smash_threshold &&
 	       player->input.stick_y_hold_time < plco->y_smash_frames;
+}
+
+bool check_down_b(const Player *player, const processed_input &input)
+{
+	return (input.pressed & Button_B) && input.stick.y <= -plco->y_special_threshold;
 }
 
 static const action_type jump = {
@@ -102,16 +108,16 @@ static const action_type jump = {
 		return !player->airborne && player->action_state != AS_KneeBend;
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
-		return ((input.pressed & Button_X)    ? (1 << 0) : 0) |
-		       ((input.pressed & Button_Y)    ? (1 << 1) : 0) |
-		       (check_up_smash(player, input) ? (1 << 2) : 0);
+		return bools_to_mask(input.pressed & Button_X,
+		                     input.pressed & Button_Y,
+		                     check_up_smash(player, input));
 	},
 	.success_predicate = [](const Player *player) {
 		return player->action_state == AS_KneeBend;
 	},
 	.end_predicate = [](const Player *player) {
 		if (!player->airborne && player->action_state != AS_KneeBend)
-			return 3;
+			return 2;
 
 		return 0;
 	},
@@ -122,8 +128,8 @@ static const action_type airdodge = {
 	.name = "Air Dodge",
 	.base_action = &jump,
 	.input_predicate = [](const Player *player, const processed_input &input) {
-		return ((input.pressed & Button_L) ? (1 << 0) : 0) |
-		       ((input.pressed & Button_R) ? (1 << 1) : 0);
+		return bools_to_mask(input.pressed & Button_L,
+		                     input.pressed & Button_R);
 	},
 	.success_predicate = [](const Player *player) {
 		return player->action_state == AS_EscapeAir;
@@ -311,7 +317,7 @@ EVENT_HANDLER(events::imgui::draw, []()
 	                              | ImGuiWindowFlags_NoBackground
 	                              | ImGuiWindowFlags_AlwaysAutoResize);
 
-	ImGui::BeginTable("Inputs", 3, 0, {640, 480});
+	ImGui::BeginTable("Inputs", 2, ImGuiTableFlags_SizingFixedFit);
 
 	const auto display_count = std::min(action_buffer.stored(), ACTION_HISTORY);
 
@@ -346,6 +352,10 @@ EVENT_HANDLER(events::imgui::draw, []()
 			const auto frame_delta = (float)poll_delta / Si.poll.y;
 			ImGui::TableNextColumn();
 			ImGui::Text("%.02ff", frame_delta);
+		} else {
+			ImGui::TableNextRow();
+			ImGui::TableNextColumn();
+			ImGui::Dummy({0, 5});
 		}
 	}
 

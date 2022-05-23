@@ -28,7 +28,7 @@ constexpr size_t ACTION_BUFFER_SIZE = 32;
 // How many actions to display
 constexpr size_t ACTION_HISTORY = 10;
 // Frame window to consider a duplicate action input a plink
-constexpr float PLINK_WINDOW = 2.f;
+constexpr float PLINK_WINDOW = 3.f;
 
 struct saved_input {
 	u8 qwrite;

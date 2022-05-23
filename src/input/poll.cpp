@@ -32,20 +32,17 @@ HOOK(SI_SetXY, [&](u16 line, u8 cnt)
 HOOK(SI_GetResponseRaw, [&](s32 chan)
 {
 	const auto result = original(chan);
-	const auto copy = (SIPadStatus&)SICHANNEL[chan].in.status;
+	const auto &new_status = SILastPadStatus[chan];
 
 	const auto retrace_count = VIGetRetraceCount();
 	if (retrace_count > last_retrace_count[chan])
 		poll_index[chan] = 0;
 
-	if (result)
-		events::input::poll.fire(chan, copy);
+	events::input::poll.fire(chan, new_status);
 
 	// Store the polls that would happen at 120Hz
-	if (!result)
-		status[chan] = { 0 };
-	else if (poll_index[chan] == 0 || poll_index[chan] == Si.poll.y / 2)
-		status[chan] = copy;
+	if (poll_index[chan] == 0 || poll_index[chan] == Si.poll.y / 2)
+		status[chan] = new_status;
 
 	poll_index[chan]++;
 	last_retrace_count[chan] = retrace_count;

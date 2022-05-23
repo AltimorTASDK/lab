@@ -13,7 +13,7 @@ static u32 last_retrace_count[4];
 static SIPadStatus status[4];
 
 static console::cvar<int> polling_mult("polling_mult", {
-	.value = 1, .min = 1, .max = 16,
+	.value = MAX_POLLS_PER_FRAME / 2, .min = 1, .max = MAX_POLLS_PER_FRAME / 2,
 	.set = [](int) {
 		// Force polling rate update
 		const auto sipoll = Si.poll.raw;
@@ -25,7 +25,8 @@ static console::cvar<int> polling_mult("polling_mult", {
 HOOK(SI_SetXY, [&](u16 line, u8 cnt)
 {
 	// Change poll interval so the middle poll happens when it would on vanilla
-	original((u16)(line / polling_mult.get()), (u8)(cnt * polling_mult.get()));
+	const auto mult = std::min(cnt * polling_mult.get(), MAX_POLLS_PER_FRAME) / cnt;
+	original((u16)(line / mult), (u8)(cnt * mult));
 });
 
 HOOK(SI_GetResponseRaw, [&](s32 chan)

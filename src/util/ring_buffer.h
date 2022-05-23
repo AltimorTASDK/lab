@@ -29,7 +29,7 @@ public:
 
 	size_t stored() const
 	{
-		return std::max(count(), N);
+		return std::min(count(), N);
 	}
 
 	bool is_valid_index(size_t index) const
@@ -69,17 +69,38 @@ public:
 
 	T *head(size_t offset = 0)
 	{
-		if (offset >= next_index)
+		if (offset >= stored())
 			return nullptr;
 
-		return get(head_index());
+		return get(head_index(offset));
 	}
 
 	const T *head(size_t offset = 0) const
 	{
-		if (offset >= next_index)
+		if (offset >= stored())
 			return nullptr;
 
-		return get(head_index());
+		return get(head_index(offset));
+	}
+
+	size_t tail_index(size_t offset = 0) const
+	{
+		return next_index - stored() + offset;
+	}
+
+	T *tail(size_t offset = 0)
+	{
+		if (offset >= stored())
+			return nullptr;
+
+		return get(tail_index(offset));
+	}
+
+	const T *tail(size_t offset = 0) const
+	{
+		if (offset >= stored())
+			return nullptr;
+
+		return get(tail_index(offset));
 	}
 };

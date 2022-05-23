@@ -90,23 +90,47 @@ EVENT_HANDLER(events::input::poll, [](s32 chan, const SIPadStatus &status)
 static u32 find_sequence_start_poll(const Player *player, const input_sequence_type &type)
 {
 	const auto &buffer = input_buffer[player->port];
-	// Only use polls that have made it through the input queue
+	// Only use polls corresponding to this frame
 	const auto queue_index = mod(HSD_PadLibData.qread - 1, PAD_QNUM);
-	// Head index must be stored because the interrupt can change it
+	// Head index must be saved because the interrupt can change it
 	const auto head_index = buffer.head_index();
+	const auto stored = std::min(head_index + 1, buffer.capacity());
 
-	for (size_t i = 0; i < std::min(head_index + 1, buffer.capacity()); i++) {
-		const auto *input = buffer.get(head_index - i);
+	// Find where the polls for this frame begin and end
+	const auto tail_index = head_index + 1 - stored;
+	const auto invalid_index = head_index + 1;
+	size_t start_index = tail_index;
+	size_t end_index = invalid_index;
+
+	for (size_t offset = 0; offset < stored; offset++) {
+		const auto *input = buffer.get(head_index - offset);
 
 		if (input == nullptr)
 			continue;
 
-		if (input->qwrite == queue_index && type.start_predicate(player, *input))
-			return head_index - 1;
+		if (end_index == invalid_index) {
+			if (input->qwrite == queue_index)
+				end_index = head_index - offset;
+		} else if (input->qwrite != queue_index) {
+			start_index = head_index - offset + 1;
+			break;
+		}
+	}
+
+	if (end_index == invalid_index) {
+		OSReport("Failed to find polls corresponding to current frame\n");
+		return head_index;
+	}
+
+	for (auto index = start_index; index <= end_index; index++) {
+		const auto *input = buffer.get(index);
+
+		if (input != nullptr && type.start_predicate(player, *input))
+			return index;
 	}
 
 	OSReport("Failed to find start of input sequence\n");
-	return buffer.count();
+	return head_index;
 }
 
 EVENT_HANDLER(events::player::as_change, [](Player *player, u32 old_state, u32 new_state)
@@ -119,6 +143,7 @@ EVENT_HANDLER(events::player::as_change, [](Player *player, u32 old_state, u32 n
 			continue;
 
 		const auto start_poll = find_sequence_start_poll(player, type);
+		OSReport("input sequence started on poll %u\n", start_poll);
 
 		input_sequences.add({
 			.type                = &type,

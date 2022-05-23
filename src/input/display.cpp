@@ -35,7 +35,7 @@ struct processed_input {
 
 	processed_input(const Player *player, const SIPadStatus &status) :
 		buttons(status.buttons),
-		pressed((status.buttons ^ player->input.held_buttons) &  status.buttons),
+		pressed((status.buttons ^ player->input.held_buttons) & status.buttons),
 		released((status.buttons ^ player->input.held_buttons) & ~status.buttons),
 		stick(convert_hw_coords(status.stick)),
 		cstick(convert_hw_coords(status.cstick))
@@ -106,9 +106,9 @@ static const auto airdodge = action_type {
 
 } // action_type_definitions
 
-static const action_type action_types[] = {
-	action_type_definitions::jump,
-	action_type_definitions::airdodge,
+static const action_type *action_types[] = {
+	&action_type_definitions::jump,
+	&action_type_definitions::airdodge,
 };
 
 constexpr auto action_type_count = std::extent_v<decltype(action_types)>;
@@ -212,7 +212,7 @@ EVENT_HANDLER(events::player::think::input::pre, [](Player *player)
 		const auto processed = processed_input(player, input->status);
 
 		for (size_t type_index = 0; type_index < action_type_count; type_index++) {
-			const auto &type = action_types[type_index];
+			const auto &type = *action_types[type_index];
 			const auto mask = detect_action_for_input(player, processed, index, type,
 			                                          ~detected_inputs[type_index]);
 			detected_inputs[type_index] |= mask;

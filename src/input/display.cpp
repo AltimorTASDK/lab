@@ -1,4 +1,6 @@
+#include "os/os.h"
 #include "os/serial.h"
+#include "os/vi.h"
 #include "hsd/pad.h"
 #include "melee/action_state.h"
 #include "melee/constants.h"
@@ -16,7 +18,9 @@
 #include <imgui.h>
 #include <ogc/machine/asm.h>
 
-constexpr auto INPUT_BUFFER_SIZE = MAX_POLLS_PER_FRAME * 10;
+constexpr auto INPUT_BUFFER_SIZE = MAX_POLLS_PER_FRAME * PAD_QNUM;
+constexpr auto INPUT_SEQUENCE_SIZE = 20;
+constexpr auto INPUT_SEQUENCE_HISTORY = 10;
 
 struct saved_input {
 	u8 qwrite;
@@ -38,7 +42,15 @@ struct input_sequence_type {
 	input_predicate *followup_predicate;
 };
 
-static input_sequence_type input_sequence_types[] = {
+struct input_sequence {
+	const input_sequence_type *type;
+	u8 port;
+	u32 start_poll_num;
+	u32 start_retrace_count;
+	ring_buffer<const saved_input*, INPUT_SEQUENCE_SIZE> inputs;
+};
+
+static const input_sequence_type input_sequence_types[] = {
 	{
 		.start_state = AS_KneeBend,
 		.start_predicate = [](const Player *player, const saved_input &input) {
@@ -52,32 +64,70 @@ static input_sequence_type input_sequence_types[] = {
 	}
 };
 
-static struct {
-	u32 poll_count;
-	ring_buffer<saved_input, INPUT_BUFFER_SIZE> input_buffer;
-} port_state[4];
+static ring_buffer<saved_input, INPUT_BUFFER_SIZE> input_buffer[4];
+static ring_buffer<input_sequence, INPUT_SEQUENCE_HISTORY> input_sequences;
 
 EVENT_HANDLER(events::input::poll, [](s32 chan, const SIPadStatus &status)
 {
 	if (status.errstat != 0)
 		return;
 
-	const auto *last_input = port_state[chan].input_buffer.head();
+	const auto *last_input = input_buffer[chan].head();
+	const auto last_buttons = last_input != nullptr ? last_input->buttons : 0;
 
 	INTERRUPT_FPU_ENABLE();
 
-	const auto input = saved_input {
+	input_buffer[chan].add({
 		.qwrite   = HSD_PadLibData.qwrite,
 		.buttons  = status.buttons,
-		.pressed  = (status.buttons ^ last_input->buttons) &  status.buttons,
-		.released = (status.buttons ^ last_input->buttons) & ~status.buttons,
+		.pressed  = (status.buttons ^ last_buttons) &  status.buttons,
+		.released = (status.buttons ^ last_buttons) & ~status.buttons,
 		.stick    = convert_hw_coords(status.stick),
 		.cstick   = convert_hw_coords(status.cstick)
-	};
-
-	port_state[chan].input_buffer.add(input);
+	});
 });
+
+static u32 find_sequence_start_poll(const Player *player, const input_sequence_type &type)
+{
+	const auto &buffer = input_buffer[player->port];
+	// Only use polls that have made it through the input queue
+	const auto queue_index = mod(HSD_PadLibData.qread - 1, PAD_QNUM);
+	// Head index must be stored because the interrupt can change it
+	const auto head_index = buffer.head_index();
+
+	for (size_t i = 0; i < std::min(head_index + 1, buffer.capacity()); i++) {
+		const auto *input = buffer.get(head_index - i);
+
+		if (input == nullptr)
+			continue;
+
+		if (input->qwrite == queue_index && type.start_predicate(player, *input))
+			return head_index - 1;
+	}
+
+	OSReport("Failed to find start of input sequence\n");
+	return buffer.count();
+}
 
 EVENT_HANDLER(events::player::as_change, [](Player *player, u32 old_state, u32 new_state)
 {
+	if (Player_IsCPU(player))
+		return;
+
+	for (const auto &type : input_sequence_types) {
+		if (type.start_state != new_state)
+			continue;
+
+		const auto start_poll = find_sequence_start_poll(player, type);
+
+		input_sequences.add({
+			.type                = &type,
+			.port                = player->port,
+			.start_poll_num      = start_poll,
+			.start_retrace_count = VIGetRetraceCount(),
+			.inputs              = { { input_buffer[player->port].get(start_poll) } }
+		});
+
+		return;
+	}
 });

@@ -22,7 +22,7 @@
 
 constexpr size_t INPUT_BUFFER_SIZE = MAX_POLLS_PER_FRAME * PAD_QNUM;
 constexpr size_t ACTION_BUFFER_SIZE = 32;
-constexpr size_t DISPLAYED_ACTIONS = 16;
+constexpr size_t ACTION_HISTORY = 16;
 
 struct saved_input {
 	u8 qwrite;
@@ -313,7 +313,7 @@ EVENT_HANDLER(events::imgui::draw, []()
 
 	ImGui::BeginTable("Inputs", 2, 0, {320, 480 - 60});
 
-	const auto display_count = std::min(action_buffer.stored(), DISPLAYED_ACTIONS);
+	const auto display_count = std::min(action_buffer.stored(), ACTION_HISTORY);
 
 	for (size_t offset = 0; offset < display_count; offset++) {
 		const auto *action = action_buffer.head(offset);

@@ -52,6 +52,8 @@ struct action_type {
 	int(*input_predicate)(const Player *player, const processed_input &input);
 	// Predicate to detect whether the action succeeded (after PlayerThink_Input)
 	bool(*success_predicate)(const Player *player);
+	// Array of input names corresponding to bits in mask returned by input_predicate
+	const char *input_names[];
 };
 
 struct action {
@@ -59,9 +61,11 @@ struct action {
 	// Number of frames between input for this and base action
 	float frame_delta;
 	// Number of poll with input for this action
-	u32 poll_index;
+	size_t poll_index;
 	// Video frame action was performed on
 	u32 frame;
+	// Bit returned by action_type::input_predicate
+	u8 input_type;
 	bool success = false;
 	u8 port;
 };
@@ -74,7 +78,7 @@ static bool check_up_smash(const Player *player, const processed_input &input)
 	       player->input.stick_y_hold_time < plco->y_smash_frames;
 }
 
-static const auto jump = action_type {
+static const action_type jump = {
 	.name = "Jump",
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		if (player->airborne || player->action_state == AS_KneeBend)
@@ -86,11 +90,12 @@ static const auto jump = action_type {
 	},
 	.success_predicate = [](const Player *player) {
 		return player->action_state == AS_KneeBend;
-	}
+	},
+	.input_names = { "X", "Y", "Up" }
 };
 
-static const auto airdodge = action_type {
-	.name = "Jump -> Air Dodge",
+static const action_type airdodge = {
+	.name = "Air Dodge",
 	.base_action = &jump,
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		if (!player->airborne && player->action_state != AS_KneeBend)
@@ -101,7 +106,8 @@ static const auto airdodge = action_type {
 	},
 	.success_predicate = [](const Player *player) {
 		return player->action_state == AS_EscapeAir;
-	}
+	},
+	.input_names = { "L", "R" }
 };
 
 } // action_type_definitions
@@ -145,17 +151,22 @@ static u32 detect_action_for_input(const Player *player, const processed_input &
 		}
 	}
 
-	const auto new_action = action {
-		.type        = &type,
-		.frame_delta = frame_delta,
-		.poll_index  = poll_index,
-		.frame       = VIGetRetraceCount(),
-		.port        = player->port
-	};
-
 	// Add the action multiple times if triggered multiple times in one poll
-	for (auto count = 0; count < __builtin_popcount(mask); count++)
-		action_buffer.add(new_action);
+	auto tmp = mask;
+
+	while (tmp != 0) {
+		const auto input_type = __builtin_ctz(tmp);
+		tmp &= ~(1 << input_type);
+
+		action_buffer.add({
+			.type        = &type,
+			.frame_delta = frame_delta,
+			.poll_index  = poll_index,
+			.frame       = VIGetRetraceCount(),
+			.input_type  = (u8)input_type,
+			.port        = player->port
+		});
+	}
 
 	return mask;
 }
@@ -231,7 +242,7 @@ EVENT_HANDLER(events::player::think::input::post, [](Player *player)
 	for (; last_confirmed_action[port] < action_buffer.count(); last_confirmed_action[port]++) {
 		auto *action = action_buffer.get(last_confirmed_action[port]);
 
-		if (action->type->success_predicate(player))
+		if (action->port == port && action->type->success_predicate(player))
 			action->success = true;
 	}
 });
@@ -254,16 +265,20 @@ EVENT_HANDLER(events::imgui::draw, []()
 		if (VIGetRetraceCount() - action->frame > ACTION_DISPLAY_TIME)
 			continue;
 
+                const char *input_name = action->type->input_names[action->input_type];
+
                 ImGui::TableNextRow();
 		ImGui::TableNextColumn();
-                ImGui::TextUnformatted(action->type->name);
+
+		if (input_name != nullptr)
+			ImGui::Text("%s (%s)\n", action->type->name, input_name);
+		else
+			ImGui::TextUnformatted(action->type->name);
 
 		if (action->frame_delta != -1.f) {
 			ImGui::TableNextColumn();
 			ImGui::Text("%f", action->frame_delta);
 		}
-
-		OSReport("drawing %s %f\n", action->type->name, action->frame_delta);
 	}
 
 	ImGui::EndTable();

@@ -10,7 +10,6 @@
 #include "input/poll.h"
 #include "player/events.h"
 #include "util/hooks.h"
-#include "util/machine.h"
 #include "util/math.h"
 #include "util/ring_buffer.h"
 #include "util/vector.h"
@@ -24,14 +23,27 @@ constexpr auto INPUT_SEQUENCE_HISTORY = 10;
 
 struct saved_input {
 	u8 qwrite;
+	SIPadStatus status;
+};
+
+struct processed_input {
 	u32 buttons;
 	u32 pressed;
 	u32 released;
 	vec2 stick;
 	vec2 cstick;
+
+	processed_input(const Player *player, const SIPadStatus &status) :
+		buttons(status.buttons),
+		pressed((status.buttons ^ player->input.last_held_buttons) &  status.buttons),
+		released((status.buttons ^ player->input.last_held_buttons) & ~status.buttons),
+		stick(convert_hw_coords(status.stick)),
+		cstick(convert_hw_coords(status.cstick))
+	{
+	}
 };
 
-using input_predicate = bool(const Player *player, const saved_input &input);
+using input_predicate = bool(const Player *player, const processed_input &input);
 
 struct input_sequence_type {
 	// Action state to start sequence upon entering
@@ -53,12 +65,12 @@ struct input_sequence {
 static const input_sequence_type input_sequence_types[] = {
 	{
 		.start_state = AS_KneeBend,
-		.start_predicate = [](const Player *player, const saved_input &input) {
+		.start_predicate = [](const Player *player, const processed_input &input) {
 			return (input.pressed & (Button_X | Button_Y)) ||
 			       (input.stick.y >= plco->y_smash_threshold &&
 			        player->input.stick_y_hold_time < plco->y_smash_frames);
 		},
-		.followup_predicate = [](const Player *player, const saved_input &input) {
+		.followup_predicate = [](const Player *player, const processed_input &input) {
 			return input.pressed != 0;
 		}
 	}
@@ -69,22 +81,8 @@ static ring_buffer<input_sequence, INPUT_SEQUENCE_HISTORY> input_sequences;
 
 EVENT_HANDLER(events::input::poll, [](s32 chan, const SIPadStatus &status)
 {
-	if (status.errstat != 0)
-		return;
-
-	const auto *last_input = input_buffer[chan].head();
-	const auto last_buttons = last_input != nullptr ? last_input->buttons : 0;
-
-	INTERRUPT_FPU_ENABLE();
-
-	input_buffer[chan].add({
-		.qwrite   = HSD_PadLibData.qwrite,
-		.buttons  = status.buttons,
-		.pressed  = (status.buttons ^ last_buttons) &  status.buttons,
-		.released = (status.buttons ^ last_buttons) & ~status.buttons,
-		.stick    = convert_hw_coords(status.stick),
-		.cstick   = convert_hw_coords(status.cstick)
-	});
+	if (status.errstat == 0)
+		input_buffer[chan].add({ .qwrite = HSD_PadLibData.qwrite, .status = status });
 });
 
 static u32 find_sequence_start_poll(const Player *player, const input_sequence_type &type)
@@ -125,7 +123,10 @@ static u32 find_sequence_start_poll(const Player *player, const input_sequence_t
 	for (auto index = start_index; index <= end_index; index++) {
 		const auto *input = buffer.get(index);
 
-		if (input != nullptr && type.start_predicate(player, *input))
+		if (input == nullptr)
+			continue;
+
+		if (type.start_predicate(player, processed_input(player, input->status)))
 			return index;
 	}
 

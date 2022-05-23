@@ -58,7 +58,7 @@ struct action_type {
 	size_t index;
 	// Action to time relative to
 	const action_type *base_action;
-	// If true, ignore state_predicate if last action input is within PLINK_WINDOW frames
+	// If true, ignore state/base action end if last action input is within PLINK_WINDOW frames
 	bool plinkable;
 	// Predicate to detect prerequisite player state for this action (before PlayerThink_Input)
 	bool(*state_predicate)(const Player *player);
@@ -95,6 +95,20 @@ struct action_entry {
 
 namespace action_type_definitions {
 
+bool is_on_ledge(const Player *player)
+{
+	return player->action_state >= AS_CliffCatch && player->action_state <= AS_CliffJumpQuick2;
+}
+
+bool is_airborne(const Player *player)
+{
+	// Consider inputs in jumpsquat to be attempted airborne inputs
+	if (player->action_state == AS_KneeBend)
+		return true;
+
+	return !is_on_ledge(player) && player->phys.floor.line == NO_LINE && player->airborne;
+}
+
 bool check_up_smash(const Player *player, const processed_input &input)
 {
 	return input.stick.y >= plco->y_smash_threshold &&
@@ -105,6 +119,8 @@ bool check_down_b(const Player *player, const processed_input &input)
 {
 	switch (player->action_state) {
 	default:
+		if (is_on_ledge(player))
+			return false;
 		if (!player->airborne && std::abs(input.stick.x) >= plco->x_special_threshold)
 			return false;
 	case AS_SquatWait:
@@ -116,7 +132,7 @@ bool check_down_b(const Player *player, const processed_input &input)
 static const action_type jump = {
 	.name = "Jump",
 	.state_predicate = [](const Player *player) {
-		return !player->airborne && player->action_state != AS_KneeBend;
+		return !is_airborne(player);
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(input.pressed & Button_X,
@@ -127,7 +143,7 @@ static const action_type jump = {
 		return player->action_state == AS_KneeBend;
 	},
 	.end_predicate = [](const Player *player) {
-		return !player->airborne && player->action_state != AS_KneeBend;
+		return !is_airborne(player);
 	},
 	.input_names = { "X", "Y", "Up" }
 };
@@ -188,8 +204,11 @@ static void detect_action_for_input(const Player *player, const processed_input 
 	for (size_t offset = 0; offset < action_buffer.stored(); offset++) {
 		const auto *action = action_buffer.head(offset);
 
-		if (action->type == type.base_action && action->active && base_action == nullptr)
-			base_action = action;
+		if (action->type == type.base_action && base_action == nullptr) {
+			// Count the 2nd input in a plink even if the base action ended
+			if (action->active || !check_state)
+				base_action = action;
+		}
 
 		if (!type.plinkable || !check_state)
 			continue;

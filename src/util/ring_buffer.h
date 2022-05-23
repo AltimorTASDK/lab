@@ -3,48 +3,52 @@
 #include "util/math.h"
 #include <optional>
 
-template<typename T, ssize_t N>
+template<typename T, size_t N>
 class ring_buffer {
 	T data[N];
-	ssize_t next_index = 0;
+	size_t next_index = 0;
 
 public:
-	ssize_t size() const
+	size_t size() const
 	{
 		return N;
 	}
 
-	ssize_t count() const
+	size_t count() const
 	{
 		return next_index;
 	}
 
-	bool is_valid_index(ssize_t index) const
+	bool is_valid_index(size_t index) const
 	{
-		return index >= std::max(0, next_index - N) && index < next_index;
+		// Relies on unsigned overflow
+		return next_index - index - 1 < N;
 	}
 
-	const T *get(ssize_t index) const
+	const T *get(size_t index) const
 	{
-		return is_valid_index(index) ? &data[mod(index, N)] : nullptr;
+		return is_valid_index(index) ? &data[index % N] : nullptr;
 	}
 
-	bool set(ssize_t index, const T &value)
+	bool set(size_t index, const T &value)
 	{
 		if (!is_valid_index(index))
 			return false;
 
-		data[mod(index, N)] = value;
+		data[index % N] = value;
 		return true;
 	}
 
 	void add(const T &value)
 	{
-		data[mod(next_index++, N)] = value;
+		data[next_index++ % N] = value;
 	}
 
-	const T *head(ssize_t offset = 0) const
+	const T *head(size_t offset = 0) const
 	{
-		return get(next_index - 1 - offset);
+		if (offset >= next_index)
+			return nullptr;
+
+		return get(next_index - offset - 1);
 	}
 };

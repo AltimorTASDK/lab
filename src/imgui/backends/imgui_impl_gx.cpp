@@ -1,13 +1,13 @@
 // dear imgui: Renderer Backend for GameCube GX
 // This needs to be used along with the GC Backend
 
-#include "imgui.h"
 #include "imgui_impl_gx.h"
 #include "os/gx.h"
 #include "util/math.h"
 #include "util/draw/render.h"
 #include <ogc/cache.h>
 #include <ogc/gx.h>
+#include <imgui.h>
 
 struct ImGui_ImplGX_Data {
 	GXTexObj font_texture;

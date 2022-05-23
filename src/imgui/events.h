@@ -4,4 +4,5 @@
 
 namespace events::imgui {
 inline event<void()> draw;
+inline event<void()> init;
 } // events::imgui

@@ -15,8 +15,6 @@ static ImFont *create_font(unsigned char (&data)[N], float size_pixels, ImFontCo
 
 EVENT_HANDLER(events::imgui::init, []()
 {
-	auto &io = ImGui::GetIO();
-
 	ImFontConfig config;
 	config.FontDataOwnedByAtlas = false;
 	config.GlyphRanges = glyphs;
@@ -25,5 +23,5 @@ EVENT_HANDLER(events::imgui::init, []()
 	fonts::medium = create_font(cascadia_mono_ttf_data, 16.f, &config);
 	fonts::large  = create_font(cascadia_mono_ttf_data, 20.f, &config);
 
-	io.FontDefault = fonts::medium;
+	ImGui::GetIO().FontDefault = fonts::medium;
 });

@@ -6,7 +6,7 @@ class ring_buffer {
 	size_t next_index = 0;
 
 public:
-	size_t size() const
+	size_t capacity() const
 	{
 		return N;
 	}

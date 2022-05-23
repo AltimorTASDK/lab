@@ -56,10 +56,12 @@ struct action_type {
 	const char *name;
 	// Index in action_type_definitions
 	size_t index;
-	// Action to time relative to
-	const action_type *base_action;
 	// If true, ignore state/base action end if last action input is within PLINK_WINDOW frames
 	bool plinkable;
+	// If true, don't register action if base state isn't detected
+	bool requires_base_action;
+	// Check whether a previous action is a suitable base action (relative timing to) for this
+	bool(*is_base_action)(const struct action_entry *action);
 	// Predicate to detect prerequisite player state for this action (before PlayerThink_Input)
 	bool(*state_predicate)(const Player *player);
 	// Predicate to detect inputs that trigger this action (before PlayerThink_Input)
@@ -150,8 +152,11 @@ static const action_type jump = {
 
 static const action_type airdodge = {
 	.name = "Air Dodge",
-	.base_action = &jump,
 	.plinkable = true,
+	.requires_base_action = true,
+	.is_base_action = [](const action_entry *action) {
+		return action->type == &jump;
+	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(input.pressed & Button_L,
 		                     input.pressed & Button_R);
@@ -204,9 +209,9 @@ static void detect_action_for_input(const Player *player, const processed_input 
 	for (size_t offset = 0; offset < action_buffer.stored(); offset++) {
 		const auto *action = action_buffer.head(offset);
 
-		if (action->type == type.base_action && base_action == nullptr) {
+		if (base_action == nullptr && type.is_base_action != nullptr) {
 			// Count the 2nd input in a plink even if the base action ended
-			if (action->active || plinked)
+			if (type.is_base_action(action) && (action->active || plinked))
 				base_action = action;
 		}
 
@@ -218,11 +223,9 @@ static void detect_action_for_input(const Player *player, const processed_input 
 		}
 	}
 
-	if (type.base_action != nullptr) {
-		// Base action is required
-		if (base_action == nullptr)
-			return;
-	}
+	// Check if base action is required
+	if (type.requires_base_action && base_action == nullptr)
+		return;
 
 	// Check action prerequisites unless plinked
 	if (!plinked && type.state_predicate != nullptr && !type.state_predicate(player))

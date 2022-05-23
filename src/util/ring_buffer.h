@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 template<typename T, size_t N>
 class ring_buffer {
 	T data[N];
@@ -14,6 +16,11 @@ public:
 	size_t count() const
 	{
 		return next_index;
+	}
+
+	size_t stored() const
+	{
+		return std::max(count(), N);
 	}
 
 	bool is_valid_index(size_t index) const

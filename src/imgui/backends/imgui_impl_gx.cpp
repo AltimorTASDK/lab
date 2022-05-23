@@ -8,7 +8,6 @@
 #include "util/draw/render.h"
 #include <ogc/cache.h>
 #include <ogc/gx.h>
-#include <stdint.h>
 
 struct ImGui_ImplGX_Data {
 	GXTexObj font_texture;

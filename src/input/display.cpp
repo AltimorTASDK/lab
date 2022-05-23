@@ -7,6 +7,7 @@
 #include "melee/player.h"
 #include "console/console.h"
 #include "imgui/events.h"
+#include "imgui/fonts.h"
 #include "input/poll.h"
 #include "player/events.h"
 #include "util/hooks.h"
@@ -18,9 +19,9 @@
 #include <ogc/machine/asm.h>
 #include <tuple>
 
-constexpr auto INPUT_BUFFER_SIZE = MAX_POLLS_PER_FRAME * PAD_QNUM;
-constexpr auto ACTION_HISTORY = 32;
-constexpr auto ACTION_DISPLAY_TIME = 240;
+constexpr size_t INPUT_BUFFER_SIZE = MAX_POLLS_PER_FRAME * PAD_QNUM;
+constexpr size_t ACTION_HISTORY = 32;
+constexpr size_t DISPLAYED_ACTIONS = 16;
 
 struct saved_input {
 	u8 qwrite;
@@ -51,7 +52,6 @@ struct action_type {
 	// Action to time relative to
 	const action_type *base_action = nullptr;
 	// Predicate to detect prerequisite player state for this action (before PlayerThink_Input)
-	// Ignored if base action was triggered by an earlier input in the same frame
 	bool(*state_predicate)(const Player *player);
 	// Predicate to detect inputs that trigger this action (before PlayerThink_Input)
 	// Returns 0 or an arbitrary mask corresponding to the input method (e.g. X/Y/Up for jump)
@@ -59,24 +59,31 @@ struct action_type {
 	// Predicate to detect whether the action succeeded (after PlayerThink_Input)
 	bool(*success_predicate)(const Player *player);
 	// Predicate to detect when this can no longer be used as a valid base action
-	bool(*end_predicate)(const Player *player);
+	// Returns 0 or the number of frames to wait before disabling plus one
+	int(*end_predicate)(const Player *player);
 	// Array of input names corresponding to bits in mask returned by input_predicate
 	const char *input_names[];
 };
 
-struct action {
+struct action_entry {
 	const action_type *type;
 	// Action to time relative to
-	const action *base_action;
+	const action_entry *base_action;
 	// Number of poll with input for this action
 	size_t poll_index;
 	// Video frame action was performed on
-	u32 frame;
-	// Bit returned by action_type::input_predicate
-	u8 input_type;
+	unsigned int frame;
+	// Number of frames before action becomes inactive
+	unsigned int end_delay = 0;
 	// Whether this can still be used as a valid base action
 	bool active = true;
+	// Whether "success" has been set
+	bool confirmed = false;
+	// Whether the character actually performed the action
 	bool success = false;
+	// Bit returned by action_type::input_predicate
+	u8 input_type;
+	// Controller port
 	u8 port;
 };
 
@@ -102,7 +109,10 @@ static const action_type jump = {
 		return player->action_state == AS_KneeBend;
 	},
 	.end_predicate = [](const Player *player) {
-		return !player->airborne && player->action_state != AS_KneeBend;
+		if (!player->airborne && player->action_state != AS_KneeBend)
+			return 3;
+
+		return 0;
 	},
 	.input_names = { "X", "Y", "Up" }
 };
@@ -110,9 +120,6 @@ static const action_type jump = {
 static const action_type airdodge = {
 	.name = "Air Dodge",
 	.base_action = &jump,
-	.state_predicate = [](const Player *player) {
-		return player->airborne || player->action_state == AS_KneeBend;
-	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return ((input.pressed & Button_L) ? (1 << 0) : 0) |
 		       ((input.pressed & Button_R) ? (1 << 1) : 0);
@@ -132,8 +139,7 @@ static const action_type *action_types[] = {
 
 constexpr auto action_type_count = std::extent_v<decltype(action_types)>;
 static ring_buffer<saved_input, INPUT_BUFFER_SIZE> input_buffer[4];
-static ring_buffer<action, ACTION_HISTORY> action_buffer;
-static size_t last_confirmed_action[4];
+static ring_buffer<action_entry, ACTION_HISTORY> action_buffer;
 static unsigned int draw_frames;
 
 [[gnu::constructor]] static void set_action_type_indices()
@@ -153,11 +159,9 @@ static void detect_action_for_input(const Player *player, const processed_input 
 {
 	const auto &type = *action_types[type_index];
 
-	// Ignore state_predicate if the base action was triggered this frame
-	if (type.base_action == nullptr || detected_inputs[type.base_action->index] == 0) {
-		if (!type.state_predicate(player))
+	// Check action prerequisites
+	if (type.state_predicate != nullptr && !type.state_predicate(player))
 			return;
-	}
 
 	// Don't detect the same inputs for the same action repeatedly in one frame
 	auto mask = type.input_predicate(player, input) & ~detected_inputs[type_index];
@@ -167,7 +171,7 @@ static void detect_action_for_input(const Player *player, const processed_input 
 
 	detected_inputs[type_index] |= mask;
 
-	const action *base_action = nullptr;
+	const action_entry *base_action = nullptr;
 
 	if (type.base_action != nullptr) {
 		// Find base action in buffer
@@ -179,6 +183,10 @@ static void detect_action_for_input(const Player *player, const processed_input 
 				break;
 			}
 		}
+
+		// Base action is required
+		if (base_action == nullptr)
+			return;
 	}
 
 	// Add the action multiple times if triggered multiple times in one poll
@@ -272,43 +280,42 @@ EVENT_HANDLER(events::player::think::input::post, [](Player *player)
 	for (size_t offset = 0; offset < action_buffer.stored(); offset++) {
 		const auto index = action_buffer.tail_index(offset);
 		auto *action = action_buffer.get(index);
+		const auto *type = action->type;
 
 		if (action->port != port)
 			continue;
 
 		// Check if action can still be used as base
-		if (action->active && action->type->end_predicate != nullptr)
-			action->active = !action->type->end_predicate(player);
+		if (action->active && action->end_delay == 0 && type->end_predicate != nullptr)
+			action->end_delay = type->end_predicate(player);
+
+		if (action->end_delay > 0 && --action->end_delay == 0)
+			action->active = false;
 
 		// Figure out which actions succeeded
-		if (index > last_confirmed_action[port]) {
-			action->success = action->type->success_predicate(player);
-			last_confirmed_action[port] = index;
+		if (!action->confirmed) {
+			action->success = type->success_predicate(player);
+			action->confirmed = true;
 		}
 	}
 });
 
 EVENT_HANDLER(events::imgui::draw, []()
 {
-	ImGui::SetNextWindowPos({20, 20});
-	ImGui::SetNextWindowSize({320, 480 - 40});
+	ImGui::SetNextWindowPos({10, 30});
 	ImGui::Begin("Inputs", nullptr, ImGuiWindowFlags_NoResize
 	                              | ImGuiWindowFlags_NoMove
 	                              | ImGuiWindowFlags_NoInputs
 	                              | ImGuiWindowFlags_NoDecoration
-	                              | ImGuiWindowFlags_NoBackground);
+	                              | ImGuiWindowFlags_NoBackground
+	                              | ImGuiWindowFlags_AlwaysAutoResize);
 
-        // Ensure contents always fill window
-        ImGui::SetCursorPosY(480);
+	ImGui::BeginTable("Inputs", 2, 0, {320, 480 - 60});
 
-	ImGui::BeginTable("Inputs", 2, 0, {320, 480 - 40});
+	const auto display_count = std::min(action_buffer.stored(), DISPLAYED_ACTIONS);
 
-	for (size_t offset = 0; offset < action_buffer.stored(); offset++) {
-		const auto *action = action_buffer.tail(offset);
-
-		if (draw_frames - action->frame > ACTION_DISPLAY_TIME)
-			continue;
-
+	for (size_t offset = 0; offset < display_count; offset++) {
+		const auto *action = action_buffer.head(offset);
                 const auto *base_action = action->base_action;
                 const auto *input_name = action->type->input_names[action->input_type];
 
@@ -329,7 +336,6 @@ EVENT_HANDLER(events::imgui::draw, []()
 	}
 
 	ImGui::EndTable();
-	ImGui::SetScrollHereY(1.f);
 
 	ImGui::End();
 

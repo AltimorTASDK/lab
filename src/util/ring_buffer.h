@@ -48,11 +48,16 @@ public:
 		data[next_index++ % N] = value;
 	}
 
+	size_t head_index(size_t offset = 0) const
+	{
+		return next_index - offset - 1;
+	}
+
 	const T *head(size_t offset = 0) const
 	{
 		if (offset >= next_index)
 			return nullptr;
 
-		return get(next_index - offset - 1);
+		return get(head_index());
 	}
 };

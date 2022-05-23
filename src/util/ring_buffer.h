@@ -38,6 +38,11 @@ public:
 		return next_index - index - 1 < N;
 	}
 
+	T *get(size_t index)
+	{
+		return is_valid_index(index) ? &data[index % N] : nullptr;
+	}
+
 	const T *get(size_t index) const
 	{
 		return is_valid_index(index) ? &data[index % N] : nullptr;
@@ -60,6 +65,14 @@ public:
 	size_t head_index(size_t offset = 0) const
 	{
 		return next_index - offset - 1;
+	}
+
+	T *head(size_t offset = 0)
+	{
+		if (offset >= next_index)
+			return nullptr;
+
+		return get(head_index());
 	}
 
 	const T *head(size_t offset = 0) const

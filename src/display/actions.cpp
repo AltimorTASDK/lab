@@ -21,9 +21,14 @@
 #include <ogc/machine/asm.h>
 #include <tuple>
 
+// How many recent inputs to remember
 constexpr size_t INPUT_BUFFER_SIZE = MAX_POLLS_PER_FRAME * PAD_QNUM;
+// How many recent actions to remember
 constexpr size_t ACTION_BUFFER_SIZE = 32;
+// How many actions to display
 constexpr size_t ACTION_HISTORY = 10;
+// Frame window to consider a duplicate action input a plink
+constexpr float PLINK_WINDOW = 2.f;
 
 struct saved_input {
 	u8 qwrite;
@@ -52,7 +57,9 @@ struct action_type {
 	// Index in action_type_definitions
 	size_t index;
 	// Action to time relative to
-	const action_type *base_action = nullptr;
+	const action_type *base_action;
+	// If true, ignore state_predicate if last action input is within PLINK_WINDOW frames
+	bool plinkable;
 	// Predicate to detect prerequisite player state for this action (before PlayerThink_Input)
 	bool(*state_predicate)(const Player *player);
 	// Predicate to detect inputs that trigger this action (before PlayerThink_Input)
@@ -61,8 +68,7 @@ struct action_type {
 	// Predicate to detect whether the action succeeded (after PlayerThink_Input)
 	bool(*success_predicate)(const Player *player);
 	// Predicate to detect when this can no longer be used as a valid base action
-	// Returns 0 or the number of frames to wait before disabling plus one
-	int(*end_predicate)(const Player *player);
+	bool(*end_predicate)(const Player *player);
 	// Array of input names corresponding to bits in mask returned by input_predicate
 	const char *input_names[];
 };
@@ -75,8 +81,6 @@ struct action_entry {
 	size_t poll_index;
 	// Video frame action was performed on
 	unsigned int frame;
-	// Number of frames before action becomes inactive
-	unsigned int end_delay = 0;
 	// Whether this can still be used as a valid base action
 	bool active = true;
 	// Whether "success" has been set
@@ -99,7 +103,14 @@ bool check_up_smash(const Player *player, const processed_input &input)
 
 bool check_down_b(const Player *player, const processed_input &input)
 {
-	return (input.pressed & Button_B) && input.stick.y <= -plco->y_special_threshold;
+	switch (player->action_state) {
+	default:
+		if (!player->airborne && std::abs(input.stick.x) >= plco->x_special_threshold)
+			return false;
+	case AS_SquatWait:
+	case AS_SquatRv:
+		return (input.pressed & Button_B) && input.stick.y <= -plco->y_special_threshold;
+	}
 }
 
 static const action_type jump = {
@@ -116,10 +127,7 @@ static const action_type jump = {
 		return player->action_state == AS_KneeBend;
 	},
 	.end_predicate = [](const Player *player) {
-		if (!player->airborne && player->action_state != AS_KneeBend)
-			return 2;
-
-		return 0;
+		return !player->airborne && player->action_state != AS_KneeBend;
 	},
 	.input_names = { "X", "Y", "Up" }
 };
@@ -127,6 +135,7 @@ static const action_type jump = {
 static const action_type airdodge = {
 	.name = "Air Dodge",
 	.base_action = &jump,
+	.plinkable = true,
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(input.pressed & Button_L,
 		                     input.pressed & Button_R);
@@ -166,35 +175,46 @@ static void detect_action_for_input(const Player *player, const processed_input 
 {
 	const auto &type = *action_types[type_index];
 
-	// Check action prerequisites
-	if (type.state_predicate != nullptr && !type.state_predicate(player))
-			return;
-
 	// Don't detect the same inputs for the same action repeatedly in one frame
 	auto mask = type.input_predicate(player, input) & ~detected_inputs[type_index];
 
 	if (mask == 0)
 		return;
 
-	detected_inputs[type_index] |= mask;
-
 	const action_entry *base_action = nullptr;
+	auto check_state = true;
+
+	// Find base action in buffer
+	for (size_t offset = 0; offset < action_buffer.stored(); offset++) {
+		const auto *action = action_buffer.head(offset);
+
+		if (action->type == type.base_action && action->active && base_action == nullptr)
+			base_action = action;
+
+		if (!type.plinkable || !check_state)
+			continue;
+
+		// Don't check state for plinked inputs
+		const auto poll_delta = poll_index - action->poll_index;
+		const auto frame_delta = (float)poll_delta / Si.poll.y;
+		check_state = frame_delta > PLINK_WINDOW;
+	}
 
 	if (type.base_action != nullptr) {
-		// Find base action in buffer
-		for (size_t offset = 0; offset < action_buffer.stored(); offset++) {
-			const auto *action = action_buffer.head(offset);
-
-			if (action->type == type.base_action && action->active) {
-				base_action = action;
-				break;
-			}
-		}
-
 		// Base action is required
 		if (base_action == nullptr)
 			return;
+
+		// Don't check state if base input on same frame
+		if (detected_inputs[base_action->type->index] != 0)
+			check_state = false;
 	}
+
+	// Check action prerequisites unless otherwise specified
+	if (check_state && type.state_predicate != nullptr && !type.state_predicate(player))
+		return;
+
+	detected_inputs[type_index] |= mask;
 
 	// Add the action multiple times if triggered multiple times in one poll
 	while (mask != 0) {
@@ -293,11 +313,8 @@ EVENT_HANDLER(events::player::think::input::post, [](Player *player)
 			continue;
 
 		// Check if action can still be used as base
-		if (action->active && action->end_delay == 0 && type->end_predicate != nullptr)
-			action->end_delay = type->end_predicate(player);
-
-		if (action->end_delay > 0 && --action->end_delay == 0)
-			action->active = false;
+		if (action->active && type->end_predicate != nullptr)
+			action->active = !type->end_predicate(player);
 
 		// Figure out which actions succeeded
 		if (!action->confirmed) {

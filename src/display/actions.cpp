@@ -29,7 +29,7 @@ constexpr size_t ACTION_BUFFER_SIZE = 32;
 // How many actions to display
 constexpr size_t ACTION_HISTORY = 10;
 // Frame window to consider a duplicate action input a plink
-constexpr float PLINK_WINDOW = 3.f;
+constexpr size_t PLINK_WINDOW = 3;
 
 struct saved_input {
 	u8 qwrite;
@@ -45,11 +45,14 @@ struct processed_input {
 
 	processed_input(const Player *player, const SIPadStatus &status) :
 		buttons(status.buttons),
-		pressed((status.buttons ^ player->input.held_buttons) & status.buttons),
-		released((status.buttons ^ player->input.held_buttons) & ~status.buttons),
 		stick(convert_hw_coords(status.stick)),
 		cstick(convert_hw_coords(status.cstick))
 	{
+		if (buttons & Button_Z)
+			buttons |= Button_A;
+
+		pressed  = (buttons ^ player->input.held_buttons) &  buttons;
+		released = (buttons ^ player->input.held_buttons) & ~buttons;
 	}
 };
 
@@ -59,17 +62,16 @@ struct action_type {
 	size_t index;
 	// If true, ignore state/base action end if last action input is within PLINK_WINDOW frames
 	bool plinkable;
-	// If true, don't register action if base state isn't detected
-	bool requires_base_action;
 	// Check whether a previous action is a suitable base action (relative timing to) for this
 	bool(*is_base_action)(const struct action_entry *action);
 	// Predicate to detect prerequisite player state for this action (before PlayerThink_Input)
-	bool(*state_predicate)(const Player *player);
+	bool(*state_predicate)(const Player *player, const struct action_entry *base);
 	// Predicate to detect inputs that trigger this action (before PlayerThink_Input)
 	// Returns 0 or an arbitrary mask corresponding to the input method (e.g. X/Y/Up for jump)
 	int(*input_predicate)(const Player *player, const processed_input &input);
 	// Predicate to detect whether the action succeeded (after PlayerThink_Input)
-	bool(*success_predicate)(const Player *player);
+	// new_state is AS_None if there was no AS change
+	bool(*success_predicate)(const Player *player, u32 new_state);
 	// Predicate to detect when this can no longer be used as a valid base action
 	bool(*end_predicate)(const Player *player);
 	// Array of input names corresponding to bits in mask returned by input_predicate
@@ -98,19 +100,27 @@ struct action_entry {
 
 namespace action_type_definitions {
 
-bool is_on_ledge(const Player *player)
-{
-	return player->action_state >= AS_CliffCatch && player->action_state <= AS_CliffJumpQuick2;
-}
+enum class state_type {
+	ground,
+	air,
+	ledge
+};
 
-bool is_airborne(const Player *player)
+state_type get_state_type(const Player *player)
 {
+	if (player->action_state >= AS_CliffCatch && player->action_state <= AS_CliffJumpQuick2)
+		return state_type::ledge;
+
 	// Consider inputs in jumpsquat to be attempted airborne inputs
-	if (player->action_state == AS_KneeBend)
-		return true;
+	if (player->action_state == AS_KneeBend || player->airborne)
+		return state_type::air;
 
-	return !is_on_ledge(player) && player->airborne;
+	return state_type::ground;
 }
+
+bool is_on_ledge(const Player *player) { return get_state_type(player) == state_type::ledge;  }
+bool is_grounded(const Player *player) { return get_state_type(player) == state_type::ground; }
+bool is_airborne(const Player *player) { return get_state_type(player) == state_type::air;    }
 
 bool check_window(u8 hold_time, int window)
 {
@@ -136,6 +146,37 @@ bool check_down_b(const Player *player, const processed_input &input)
 	}
 }
 
+u32 check_aerial(const Player *player, const processed_input &input)
+{
+	const auto &last_cstick = player->input.last_cstick;
+	const auto threshold_x = plco->aerial_threshold_x;
+	const auto threshold_y = plco->aerial_threshold_y;
+
+	vec2 stick;
+
+	if ((std::abs(last_cstick.x) < threshold_x && std::abs(input.cstick.x) >= threshold_x) ||
+	    (std::abs(last_cstick.y) < threshold_y && std::abs(input.cstick.y) >= threshold_y)) {
+		stick = input.cstick;
+	} else if (input.pressed & Button_A) {
+		stick = input.stick;
+	} else {
+		return AS_None;
+	}
+
+	const auto angle = get_stick_angle(stick);
+
+	if (angle > plco->angle_50d)
+		return AS_AttackAirHi;
+	if (angle < -plco->angle_50d)
+		return AS_AttackAirLw;
+	if (stick.x * player->direction >= threshold_x)
+		return AS_AttackAirB;
+	if (stick.x * player->direction <= -threshold_x)
+		return AS_AttackAirF;
+
+	return AS_AttackAirN;
+}
+
 extern const action_type shine;
 
 const action_type jump = {
@@ -143,7 +184,7 @@ const action_type jump = {
 	.is_base_action = [](const action_entry *action) {
 		return action->type == &shine;
 	},
-	.state_predicate = [](const Player *player) {
+	.state_predicate = [](const Player *player, const action_entry *base) {
 		return !is_airborne(player);
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
@@ -151,8 +192,8 @@ const action_type jump = {
 		                     input.pressed & Button_Y,
 		                     check_up_smash(player, input));
 	},
-	.success_predicate = [](const Player *player) {
-		return player->action_state == AS_KneeBend;
+	.success_predicate = [](const Player *player, u32 new_state) {
+		return new_state == AS_KneeBend;
 	},
 	.end_predicate = [](const Player *player) {
 		return !is_airborne(player);
@@ -160,19 +201,68 @@ const action_type jump = {
 	.input_names = { "X", "Y", "Up" }
 };
 
+const action_type dj = {
+	.name = "DJ",
+	.is_base_action = [](const action_entry *action) {
+		return action->type == &jump || action->type == &shine;
+	},
+	.state_predicate = [](const Player *player, const action_entry *base) {
+		return is_airborne(player);
+	},
+	.input_predicate = [](const Player *player, const processed_input &input) {
+		return bools_to_mask(input.pressed & Button_X,
+		                     input.pressed & Button_Y,
+		                     check_up_smash(player, input));
+	},
+	.success_predicate = [](const Player *player, u32 new_state) {
+		return new_state == AS_JumpAerialF ||
+		       new_state == AS_JumpAerialB;
+	},
+	.end_predicate = [](const Player *player) {
+		return !is_airborne(player);
+	},
+	.input_names = { "X", "Y", "Up" }
+};
+
+template<string_literal name, u32 state>
+const action_type aerial = {
+	.name = name.value,
+	.is_base_action = [](const action_entry *action) {
+		return action->type == &jump || action->type == &dj;
+	},
+	.state_predicate = [](const Player *player, const action_entry *base) {
+		return is_airborne(player);
+	},
+	.input_predicate = [](const Player *player, const processed_input &input) {
+		return bools_to_mask(check_aerial(player, input) == state);
+	},
+	.success_predicate = [](const Player *player, u32 new_state) {
+		return new_state == state;
+	},
+	.input_names = { nullptr }
+};
+
+const action_type &nair = aerial<"Nair", AS_AttackAirN>;
+const action_type &fair = aerial<"Fair", AS_AttackAirF>;
+const action_type &uair = aerial<"Uair", AS_AttackAirHi>;
+const action_type &bair = aerial<"Bair", AS_AttackAirB>;
+const action_type &dair = aerial<"Dair", AS_AttackAirLw>;
+
 const action_type airdodge = {
 	.name = "Air Dodge",
 	.plinkable = true,
-	.requires_base_action = true,
 	.is_base_action = [](const action_entry *action) {
-		return action->type == &jump;
+		return action->type == &jump || action->type == &dj;
+	},
+	.state_predicate = [](const Player *player, const action_entry *base) {
+		return base != nullptr || is_airborne(player);
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(input.pressed & Button_L,
 		                     input.pressed & Button_R);
 	},
-	.success_predicate = [](const Player *player) {
-		return player->action_state == AS_EscapeAir;
+	.success_predicate = [](const Player *player, u32 new_state) {
+		return new_state == AS_EscapeAir;
 	},
 	.input_names = { "L", "R" }
 };
@@ -182,15 +272,15 @@ const action_type shine = {
 	.is_base_action = [](const action_entry *action) {
 		return action->type == &jump;
 	},
-	.state_predicate = [](const Player *player) {
+	.state_predicate = [](const Player *player, const action_entry *base) {
 		return !is_on_ledge(player);
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(check_down_b(player, input));
 	},
-	.success_predicate = [](const Player *player) {
-		return player->action_state == AS_Fox_SpecialLwStart ||
-		       player->action_state == AS_Fox_SpecialAirLwStart;
+	.success_predicate = [](const Player *player, u32 new_state) {
+		return new_state == AS_Fox_SpecialLwStart ||
+		       new_state == AS_Fox_SpecialAirLwStart;
 	},
 	.end_predicate = [](const Player *player) {
 		return player->action_state < AS_Fox_SpecialLwStart ||
@@ -203,6 +293,12 @@ const action_type shine = {
 
 static const action_type *action_types[] = {
 	&action_type_definitions::jump,
+	&action_type_definitions::dj,
+	&action_type_definitions::nair,
+	&action_type_definitions::fair,
+	&action_type_definitions::uair,
+	&action_type_definitions::bair,
+	&action_type_definitions::dair,
 	&action_type_definitions::airdodge,
 	&action_type_definitions::shine
 };
@@ -235,33 +331,28 @@ static void detect_action_for_input(const Player *player, const processed_input 
 	if (mask == 0)
 		return;
 
-	const action_entry *base_action = nullptr;
+	const action_entry *base = nullptr;
 	auto plinked = false;
 
 	// Find base action in buffer
 	for (size_t offset = 0; offset < action_buffer.stored(); offset++) {
 		const auto *action = action_buffer.head(offset);
 
-		if (base_action == nullptr && type.is_base_action != nullptr) {
+		if (base == nullptr && type.is_base_action != nullptr) {
 			// Count the 2nd input in a plink even if the base action ended
 			if (type.is_base_action(action) && (action->active || plinked))
-				base_action = action;
+				base = action;
 		}
 
 		if (type.plinkable && !plinked) {
 			// Check if this is the 2nd input in a plink
 			const auto poll_delta = poll_index - action->poll_index;
-			const auto frame_delta = (float)poll_delta / Si.poll.y;
-			plinked = frame_delta <= PLINK_WINDOW;
+			plinked = poll_delta <= PLINK_WINDOW * Si.poll.y;
 		}
 	}
 
-	// Check if base action is required
-	if (type.requires_base_action && base_action == nullptr)
-		return;
-
 	// Check action prerequisites unless plinked
-	if (!plinked && type.state_predicate != nullptr && !type.state_predicate(player))
+	if (!plinked && type.state_predicate != nullptr && !type.state_predicate(player, base))
 		return;
 
 	detected_inputs[type_index] |= mask;
@@ -273,7 +364,7 @@ static void detect_action_for_input(const Player *player, const processed_input 
 
 		action_buffer.add({
 			.type        = &type,
-			.base_action = base_action,
+			.base_action = base,
 			.poll_index  = poll_index,
 			.frame       = draw_frames,
 			.input_type  = (u8)input_type,
@@ -347,12 +438,13 @@ EVENT_HANDLER(events::player::think::input::pre, [](Player *player)
 	}
 });
 
-EVENT_HANDLER(events::player::think::input::post, [](Player *player)
+EVENT_HANDLER(events::player::think::input::post, [](Player *player, u32 old_state)
 {
 	if (Player_IsCPU(player))
 		return;
 
 	const auto port = player->port;
+	const auto new_state = player->action_state != old_state ? player->action_state : AS_None;
 
 	for (size_t offset = 0; offset < action_buffer.stored(); offset++) {
 		const auto index = action_buffer.tail_index(offset);
@@ -368,7 +460,7 @@ EVENT_HANDLER(events::player::think::input::post, [](Player *player)
 
 		// Figure out which actions succeeded
 		if (!action->confirmed) {
-			action->success = type->success_predicate(player);
+			action->success = type->success_predicate(player, new_state);
 			action->confirmed = true;
 		}
 	}

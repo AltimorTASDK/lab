@@ -48,8 +48,13 @@ struct processed_input {
 		stick(convert_hw_coords(status.stick)),
 		cstick(convert_hw_coords(status.cstick))
 	{
-		if (buttons & Button_Z)
+		if (buttons & Button_Z) {
 			buttons |= Button_A;
+			buttons |= Button_AnalogLR;
+		}
+
+		if (std::max(status.analog_l, status.analog_r) >= LR_DEADZONE)
+			buttons |= Button_AnalogLR;
 
 		pressed  = (buttons ^ player->input.held_buttons) &  buttons;
 		released = (buttons ^ player->input.held_buttons) & ~buttons;
@@ -122,16 +127,41 @@ bool is_on_ledge(const Player *player) { return get_state_type(player) == state_
 bool is_grounded(const Player *player) { return get_state_type(player) == state_type::ground; }
 bool is_airborne(const Player *player) { return get_state_type(player) == state_type::air;    }
 
-bool check_window(u8 hold_time, int window)
+int get_stick_x_hold_time(const Player *player, const processed_input &input)
 {
-	// Check for special unheld value
-	return hold_time < window || hold_time == 0xFE;
+	// Determine next stick_x_hold_time value
+	if (std::abs(input.stick.x) < plco->stick_hold_threshold.x)
+		return 0xFE;
+
+	if (std::abs(player->input.stick.x) < plco->stick_hold_threshold.x)
+		return 0;
+
+	return player->input.stick_x_hold_time + 1;
+}
+
+int get_stick_y_hold_time(const Player *player, const processed_input &input)
+{
+	// Determine next stick_y_hold_time value
+	if (std::abs(input.stick.y) < plco->stick_hold_threshold.y)
+		return 0xFE;
+
+	if (std::abs(player->input.stick.y) < plco->stick_hold_threshold.y)
+		return 0;
+
+	return player->input.stick_y_hold_time + 1;
 }
 
 bool check_up_smash(const Player *player, const processed_input &input)
 {
 	return input.stick.y >= plco->y_smash_threshold &&
-	       check_window(player->input.stick_y_hold_time, plco->y_smash_frames);
+	       get_stick_y_hold_time(player, input) < plco->y_smash_frames;
+}
+
+bool check_up_smash_instant(const Player *player, const processed_input &input)
+{
+	return input.stick.y >= plco->y_smash_threshold &&
+	       player->input.stick.y < plco->y_smash_threshold &&
+	       get_stick_y_hold_time(player, input) < plco->y_smash_frames;
 }
 
 bool check_down_b(const Player *player, const processed_input &input)
@@ -148,7 +178,7 @@ bool check_down_b(const Player *player, const processed_input &input)
 
 u32 check_aerial(const Player *player, const processed_input &input)
 {
-	const auto &last_cstick = player->input.last_cstick;
+	const auto &last_cstick = player->input.cstick;
 	const auto threshold_x = plco->aerial_threshold_x;
 	const auto threshold_y = plco->aerial_threshold_y;
 
@@ -158,23 +188,26 @@ u32 check_aerial(const Player *player, const processed_input &input)
 	    (std::abs(last_cstick.y) < threshold_y && std::abs(input.cstick.y) >= threshold_y)) {
 		stick = input.cstick;
 	} else if (input.pressed & Button_A) {
+		// Assume Z presses during an aerial are L cancels
+		if (!player->iasa &&
+		    player->action_state >= AS_AttackAirN &&
+		    player->action_state <= AS_AttackAirLw &&
+		    (input.pressed & Button_Z)) {
+			return AS_None;
+		}
+
 		stick = input.stick;
+
+		if (std::abs(stick.x) < threshold_x && std::abs(stick.y) < threshold_y)
+			return AS_AttackAirN;
 	} else {
 		return AS_None;
 	}
 
-	const auto angle = get_stick_angle(stick);
-
-	if (angle > plco->angle_50d)
-		return AS_AttackAirHi;
-	if (angle < -plco->angle_50d)
-		return AS_AttackAirLw;
-	if (stick.x * player->direction >= threshold_x)
-		return AS_AttackAirB;
-	if (stick.x * player->direction <= -threshold_x)
-		return AS_AttackAirF;
-
-	return AS_AttackAirN;
+	if (get_stick_angle(stick) > plco->angle_50d)
+		return stick.y > 0 ? AS_AttackAirHi : AS_AttackAirLw;
+	else
+		return stick.x * player->direction > 0 ? AS_AttackAirF : AS_AttackAirB;
 }
 
 extern const action_type shine;
@@ -190,7 +223,7 @@ const action_type jump = {
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(input.pressed & Button_X,
 		                     input.pressed & Button_Y,
-		                     check_up_smash(player, input));
+		                     check_up_smash_instant(player, input));
 	},
 	.success_predicate = [](const Player *player, u32 new_state) {
 		return new_state == AS_KneeBend;
@@ -204,7 +237,7 @@ const action_type jump = {
 const action_type dj = {
 	.name = "DJ",
 	.is_base_action = [](const action_entry *action) {
-		return action->type == &jump || action->type == &shine;
+		return action->type == &jump || action->type == &dj || action->type == &shine;
 	},
 	.state_predicate = [](const Player *player, const action_entry *base) {
 		return is_airborne(player);
@@ -212,7 +245,7 @@ const action_type dj = {
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(input.pressed & Button_X,
 		                     input.pressed & Button_Y,
-		                     check_up_smash(player, input));
+		                     check_up_smash_instant(player, input));
 	},
 	.success_predicate = [](const Player *player, u32 new_state) {
 		return new_state == AS_JumpAerialF ||
@@ -244,8 +277,8 @@ const action_type aerial = {
 
 const action_type &nair = aerial<"Nair", AS_AttackAirN>;
 const action_type &fair = aerial<"Fair", AS_AttackAirF>;
-const action_type &uair = aerial<"Uair", AS_AttackAirHi>;
 const action_type &bair = aerial<"Bair", AS_AttackAirB>;
+const action_type &uair = aerial<"Uair", AS_AttackAirHi>;
 const action_type &dair = aerial<"Dair", AS_AttackAirLw>;
 
 const action_type airdodge = {
@@ -296,8 +329,8 @@ static const action_type *action_types[] = {
 	&action_type_definitions::dj,
 	&action_type_definitions::nair,
 	&action_type_definitions::fair,
-	&action_type_definitions::uair,
 	&action_type_definitions::bair,
+	&action_type_definitions::uair,
 	&action_type_definitions::dair,
 	&action_type_definitions::airdodge,
 	&action_type_definitions::shine

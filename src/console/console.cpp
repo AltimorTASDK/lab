@@ -59,7 +59,7 @@ static void parse_line()
                         argv[argc++] = arg_ptr + 1;
                         arg_ptr = strchr(arg_ptr + 1, '\"');
                         if (arg_ptr != nullptr)
-                                arg_ptr++;
+                                *arg_ptr++ = '\0';
                 } else {
                         argv[argc++] = arg_ptr;
                         arg_ptr = strchr(arg_ptr + 1, ' ');

@@ -130,10 +130,12 @@ bool is_airborne(const Player *player) { return get_state_type(player) == state_
 int get_stick_x_hold_time(const Player *player, const processed_input &input)
 {
 	// Determine next stick_x_hold_time value
-	if (std::abs(input.stick.x) < plco->stick_hold_threshold.x)
+	const auto sign = std::copysign(1.f, input.stick.x);
+
+	if (input.stick.x * sign < plco->stick_hold_threshold.x)
 		return 0xFE;
 
-	if (std::abs(player->input.stick.x) < plco->stick_hold_threshold.x)
+	if (player->input.stick.x * sign < plco->stick_hold_threshold.x)
 		return 0;
 
 	return player->input.stick_x_hold_time + 1;
@@ -142,26 +144,63 @@ int get_stick_x_hold_time(const Player *player, const processed_input &input)
 int get_stick_y_hold_time(const Player *player, const processed_input &input)
 {
 	// Determine next stick_y_hold_time value
-	if (std::abs(input.stick.y) < plco->stick_hold_threshold.y)
+	const auto sign = std::copysign(1.f, input.stick.y);
+
+	if (input.stick.y * sign < plco->stick_hold_threshold.y)
 		return 0xFE;
 
-	if (std::abs(player->input.stick.y) < plco->stick_hold_threshold.y)
+	if (player->input.stick.y * sign < plco->stick_hold_threshold.y)
 		return 0;
 
 	return player->input.stick_y_hold_time + 1;
 }
 
-bool check_up_smash(const Player *player, const processed_input &input)
+bool check_fsmash(const Player *player, const processed_input &input)
+{
+	return input.stick.x * player->direction >= plco->x_smash_threshold &&
+	       get_stick_x_hold_time(player, input) < plco->x_smash_frames;
+}
+
+bool check_fsmash_instant(const Player *player, const processed_input &input)
+{
+	return input.stick.x * player->direction >= plco->x_smash_threshold &&
+	       player->input.stick.x * player->direction < plco->x_smash_threshold;
+}
+
+bool check_bsmash(const Player *player, const processed_input &input)
+{
+	return -input.stick.x * player->direction >= plco->x_smash_threshold &&
+	       get_stick_x_hold_time(player, input) < plco->x_smash_frames;
+}
+
+bool check_bsmash_instant(const Player *player, const processed_input &input)
+{
+	return -input.stick.x * player->direction >= plco->x_smash_threshold &&
+	       -player->input.stick.x * player->direction < plco->x_smash_threshold;
+}
+
+bool check_usmash(const Player *player, const processed_input &input)
 {
 	return input.stick.y >= plco->y_smash_threshold &&
 	       get_stick_y_hold_time(player, input) < plco->y_smash_frames;
 }
 
-bool check_up_smash_instant(const Player *player, const processed_input &input)
+bool check_usmash_instant(const Player *player, const processed_input &input)
 {
 	return input.stick.y >= plco->y_smash_threshold &&
-	       player->input.stick.y < plco->y_smash_threshold &&
+	       player->input.stick.y < plco->y_smash_threshold;
+}
+
+bool check_dsmash(const Player *player, const processed_input &input)
+{
+	return -input.stick.y >= plco->y_smash_threshold &&
 	       get_stick_y_hold_time(player, input) < plco->y_smash_frames;
+}
+
+bool check_dsmash_instant(const Player *player, const processed_input &input)
+{
+	return -input.stick.y >= plco->y_smash_threshold &&
+	       -player->input.stick.y < plco->y_smash_threshold;
 }
 
 bool check_down_b(const Player *player, const processed_input &input)
@@ -212,10 +251,50 @@ u32 check_aerial(const Player *player, const processed_input &input)
 
 extern const action_type shine;
 
+const action_type dash = {
+	.name = "Dash",
+	.is_base_action = [](const action_entry *action) {
+		return action->type == &dash;
+	},
+	.state_predicate = [](const Player *player, const action_entry *base) {
+		return is_grounded(player);
+	},
+	.input_predicate = [](const Player *player, const processed_input &input) {
+		return bools_to_mask(check_fsmash_instant(player, input));
+	},
+	.success_predicate = [](const Player *player, u32 new_state) {
+		return new_state == AS_Dash;
+	},
+	.end_predicate = [](const Player *player) {
+		return player->action_state != AS_Dash;
+	},
+	.input_names = { nullptr }
+};
+
+const action_type pivot = {
+	.name = "Pivot",
+	.is_base_action = [](const action_entry *action) {
+		return action->type == &dash || action->type == &pivot;
+	},
+	.state_predicate = [](const Player *player, const action_entry *base) {
+		return is_grounded(player);
+	},
+	.input_predicate = [](const Player *player, const processed_input &input) {
+		return bools_to_mask(check_bsmash_instant(player, input));
+	},
+	.success_predicate = [](const Player *player, u32 new_state) {
+		return new_state == AS_Turn;
+	},
+	.end_predicate = [](const Player *player) {
+		return player->action_state != AS_Turn && player->action_state != AS_Dash;
+	},
+	.input_names = { nullptr }
+};
+
 const action_type jump = {
 	.name = "Jump",
 	.is_base_action = [](const action_entry *action) {
-		return action->type == &shine;
+		return action->type == &shine || action->type == &dash;
 	},
 	.state_predicate = [](const Player *player, const action_entry *base) {
 		return !is_airborne(player);
@@ -223,7 +302,7 @@ const action_type jump = {
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(input.pressed & Button_X,
 		                     input.pressed & Button_Y,
-		                     check_up_smash_instant(player, input));
+		                     check_usmash_instant(player, input));
 	},
 	.success_predicate = [](const Player *player, u32 new_state) {
 		return new_state == AS_KneeBend;
@@ -245,7 +324,7 @@ const action_type dj = {
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(input.pressed & Button_X,
 		                     input.pressed & Button_Y,
-		                     check_up_smash_instant(player, input));
+		                     check_usmash_instant(player, input));
 	},
 	.success_predicate = [](const Player *player, u32 new_state) {
 		return new_state == AS_JumpAerialF ||
@@ -325,6 +404,8 @@ const action_type shine = {
 } // action_type_definitions
 
 static const action_type *action_types[] = {
+	&action_type_definitions::dash,
+	&action_type_definitions::pivot,
 	&action_type_definitions::jump,
 	&action_type_definitions::dj,
 	&action_type_definitions::nair,

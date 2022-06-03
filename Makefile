@@ -66,7 +66,7 @@ endif
 DOLFILE := $(ISODIR)/sys/main.dol
 PATCHES := $(BINDIR)/patches.bin
 DOLELF  := $(BINDIR)/dol.elf
-DOLDATA := $(OBJDIR)/dol_data.bin
+DOLDATA := build/dol_data.bin
 DOLLD   := lab.ld
 
 CFILES   := $(foreach dir, $(SRCDIR), $(shell find $(dir) -type f -name '*.c'   2> /dev/null))

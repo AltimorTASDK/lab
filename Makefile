@@ -44,7 +44,7 @@ MELEEMAP  = $(MELEELD:.ld=.map)
 
 CFLAGS    = $(DEFINES) -mogc -mcpu=750 -meabi -mhard-float -Os \
             -Wall -Wno-switch -Wno-unused-value -Wconversion -Warith-conversion -Wno-multichar \
-            -Wno-pointer-arith \
+			-Wno-deprecated-enum-enum-conversion -Wno-pointer-arith \
             -ffunction-sections -fdata-sections -mno-sdata \
             -fno-builtin-sqrt -fno-builtin-sqrtf
 ASFLAGS   = $(DEFINES) -Wa,-mregnames -Wa,-mgekko

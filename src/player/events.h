@@ -10,5 +10,5 @@ inline event<void(Player *player, u32 old_state, u32 new_state)> as_change;
 
 namespace events::player::think::input {
 inline event<void(Player *player)> pre;
-inline event<void(Player *player, u32 old_state)> post;
+inline event<void(Player *player, u32 old_state, u32 new_state)> post;
 } // events::player::think::input

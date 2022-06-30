@@ -68,7 +68,7 @@ struct action_type {
 	// If true, ignore state/base action end if last action input is within PLINK_WINDOW frames
 	bool plinkable;
 	// Check whether a previous action is a suitable base action (relative timing to) for this
-	bool(*is_base_action)(const struct action_entry *action);
+	bool(*is_base_action)(const struct action_entry *action, size_t poll_delta);
 	// Predicate to detect prerequisite player state for this action (before PlayerThink_Input)
 	bool(*state_predicate)(const Player *player, const struct action_entry *base);
 	// Predicate to detect inputs that trigger this action (before PlayerThink_Input)
@@ -163,7 +163,7 @@ bool check_fsmash(const Player *player, const processed_input &input)
 
 bool check_fsmash_instant(const Player *player, const processed_input &input)
 {
-	return input.stick.x * player->direction >= plco->x_smash_threshold &&
+	return check_fsmash(player, input) &&
 	       player->input.stick.x * player->direction < plco->x_smash_threshold;
 }
 
@@ -175,7 +175,7 @@ bool check_bsmash(const Player *player, const processed_input &input)
 
 bool check_bsmash_instant(const Player *player, const processed_input &input)
 {
-	return -input.stick.x * player->direction >= plco->x_smash_threshold &&
+	return check_bsmash(player, input) &&
 	       -player->input.stick.x * player->direction < plco->x_smash_threshold;
 }
 
@@ -187,7 +187,7 @@ bool check_usmash(const Player *player, const processed_input &input)
 
 bool check_usmash_instant(const Player *player, const processed_input &input)
 {
-	return input.stick.y >= plco->y_smash_threshold &&
+	return check_usmash(player, input) &&
 	       player->input.stick.y < plco->y_smash_threshold;
 }
 
@@ -199,7 +199,7 @@ bool check_dsmash(const Player *player, const processed_input &input)
 
 bool check_dsmash_instant(const Player *player, const processed_input &input)
 {
-	return -input.stick.y >= plco->y_smash_threshold &&
+	return check_dsmash(player, input) &&
 	       -player->input.stick.y < plco->y_smash_threshold;
 }
 
@@ -250,11 +250,15 @@ u32 check_aerial(const Player *player, const processed_input &input)
 }
 
 extern const action_type shine;
+extern const action_type pivot;
 
 const action_type dash = {
 	.name = "Dash",
-	.is_base_action = [](const action_entry *action) {
-		return action->type == &dash;
+	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+		if (action->type == &pivot)
+			return poll_delta == Si.poll.y;
+
+		return action->type == &dash || action->type == &pivot;
 	},
 	.state_predicate = [](const Player *player, const action_entry *base) {
 		return is_grounded(player);
@@ -273,7 +277,7 @@ const action_type dash = {
 
 const action_type pivot = {
 	.name = "Pivot",
-	.is_base_action = [](const action_entry *action) {
+	.is_base_action = [](const action_entry *action, size_t poll_delta) {
 		return action->type == &dash || action->type == &pivot;
 	},
 	.state_predicate = [](const Player *player, const action_entry *base) {
@@ -293,7 +297,7 @@ const action_type pivot = {
 
 const action_type jump = {
 	.name = "Jump",
-	.is_base_action = [](const action_entry *action) {
+	.is_base_action = [](const action_entry *action, size_t poll_delta) {
 		return action->type == &shine || action->type == &dash;
 	},
 	.state_predicate = [](const Player *player, const action_entry *base) {
@@ -315,7 +319,7 @@ const action_type jump = {
 
 const action_type dj = {
 	.name = "DJ",
-	.is_base_action = [](const action_entry *action) {
+	.is_base_action = [](const action_entry *action, size_t poll_delta) {
 		return action->type == &jump || action->type == &dj || action->type == &shine;
 	},
 	.state_predicate = [](const Player *player, const action_entry *base) {
@@ -339,7 +343,7 @@ const action_type dj = {
 template<string_literal name, u32 state>
 const action_type aerial = {
 	.name = name.value,
-	.is_base_action = [](const action_entry *action) {
+	.is_base_action = [](const action_entry *action, size_t poll_delta) {
 		return action->type == &jump || action->type == &dj;
 	},
 	.state_predicate = [](const Player *player, const action_entry *base) {
@@ -363,7 +367,7 @@ const action_type &dair = aerial<"Dair", AS_AttackAirLw>;
 const action_type airdodge = {
 	.name = "Air Dodge",
 	.plinkable = true,
-	.is_base_action = [](const action_entry *action) {
+	.is_base_action = [](const action_entry *action, size_t poll_delta) {
 		return action->type == &jump || action->type == &dj;
 	},
 	.state_predicate = [](const Player *player, const action_entry *base) {
@@ -381,7 +385,7 @@ const action_type airdodge = {
 
 const action_type shine = {
 	.name = "Shine",
-	.is_base_action = [](const action_entry *action) {
+	.is_base_action = [](const action_entry *action, size_t poll_delta) {
 		return action->type == &jump;
 	},
 	.state_predicate = [](const Player *player, const action_entry *base) {
@@ -451,16 +455,16 @@ static void detect_action_for_input(const Player *player, const processed_input 
 	// Find base action in buffer
 	for (size_t offset = 0; offset < action_buffer.stored(); offset++) {
 		const auto *action = action_buffer.head(offset);
+		const auto poll_delta = poll_index - action->poll_index;
 
 		if (base == nullptr && type.is_base_action != nullptr) {
 			// Count the 2nd input in a plink even if the base action ended
-			if (type.is_base_action(action) && (action->active || plinked))
+			if (type.is_base_action(action, poll_delta) && (action->active || plinked))
 				base = action;
 		}
 
-		if (type.plinkable && !plinked) {
+		if (type.plinkable && !plinked && action->type == &type) {
 			// Check if this is the 2nd input in a plink
-			const auto poll_delta = poll_index - action->poll_index;
 			plinked = poll_delta <= PLINK_WINDOW * Si.poll.y;
 		}
 	}

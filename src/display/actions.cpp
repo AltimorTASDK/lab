@@ -43,15 +43,15 @@ struct processed_input {
 	vec2 stick;
 	vec2 cstick;
 
+	processed_input() = default;
+
 	processed_input(const Player *player, const SIPadStatus &status) :
 		buttons(status.buttons),
 		stick(convert_hw_coords(status.stick)),
 		cstick(convert_hw_coords(status.cstick))
 	{
-		if (buttons & Button_Z) {
-			buttons |= Button_A;
-			buttons |= Button_AnalogLR;
-		}
+		if (buttons & Button_Z)
+			buttons |= Button_AnalogLR | Button_A;
 
 		if (std::max(status.analog_l, status.analog_r) >= LR_DEADZONE)
 			buttons |= Button_AnalogLR;
@@ -67,6 +67,10 @@ struct action_type {
 	size_t index;
 	// If true, ignore state/base action end if last action input is within PLINK_WINDOW frames
 	bool plinkable;
+	// If true, action must succeed to be active or displayed
+	bool must_succeed;
+	// How many frames to still consider action active after end_predicate returns true
+	unsigned int end_delay;
 	// Check whether a previous action is a suitable base action (relative timing to) for this
 	bool(*is_base_action)(const struct action_entry *action, size_t poll_delta);
 	// Predicate to detect prerequisite player state for this action (before PlayerThink_Input)
@@ -74,9 +78,12 @@ struct action_type {
 	// Predicate to detect inputs that trigger this action (before PlayerThink_Input)
 	// Returns 0 or an arbitrary mask corresponding to the input method (e.g. X/Y/Up for jump)
 	int(*input_predicate)(const Player *player, const processed_input &input);
+	// Like input_predicate, but receives input from base action.
+	int(*base_input_predicate)(const Player *player, const processed_input &input,
+	                                                 const processed_input &base_input);
 	// Predicate to detect whether the action succeeded (after PlayerThink_Input)
 	// new_state is AS_None if there was no AS change
-	bool(*success_predicate)(const Player *player, u32 new_state);
+	bool(*success_predicate)(const Player *player, s32 new_state);
 	// Predicate to detect when this can no longer be used as a valid base action
 	bool(*end_predicate)(const Player *player);
 	// Array of input names corresponding to bits in mask returned by input_predicate
@@ -89,8 +96,12 @@ struct action_entry {
 	const action_entry *base_action;
 	// Number of poll with input for this action
 	size_t poll_index;
+	// Input this action was detected with
+	processed_input input;
 	// Video frame action was performed on
 	unsigned int frame;
+	// How many frames until action becomes inactive
+	unsigned int end_timer;
 	// Whether this can still be used as a valid base action
 	bool active = true;
 	// Whether "success" has been set
@@ -155,9 +166,14 @@ int get_stick_y_hold_time(const Player *player, const processed_input &input)
 	return player->input.stick_y_hold_time + 1;
 }
 
+bool check_fsmash_region(const Player *player, const processed_input &input)
+{
+	return input.stick.x * player->direction >= plco->x_smash_threshold;
+}
+
 bool check_fsmash(const Player *player, const processed_input &input)
 {
-	return input.stick.x * player->direction >= plco->x_smash_threshold &&
+	return check_fsmash_region(player, input) &&
 	       get_stick_x_hold_time(player, input) < plco->x_smash_frames;
 }
 
@@ -167,9 +183,14 @@ bool check_fsmash_instant(const Player *player, const processed_input &input)
 	       player->input.stick.x * player->direction < plco->x_smash_threshold;
 }
 
+bool check_bsmash_region(const Player *player, const processed_input &input)
+{
+	return -input.stick.x * player->direction >= plco->x_smash_threshold;
+}
+
 bool check_bsmash(const Player *player, const processed_input &input)
 {
-	return -input.stick.x * player->direction >= plco->x_smash_threshold &&
+	return check_bsmash_region(player, input) &&
 	       get_stick_x_hold_time(player, input) < plco->x_smash_frames;
 }
 
@@ -179,9 +200,14 @@ bool check_bsmash_instant(const Player *player, const processed_input &input)
 	       -player->input.stick.x * player->direction < plco->x_smash_threshold;
 }
 
+bool check_usmash_region(const Player *player, const processed_input &input)
+{
+	return input.stick.y >= plco->y_smash_threshold;
+}
+
 bool check_usmash(const Player *player, const processed_input &input)
 {
-	return input.stick.y >= plco->y_smash_threshold &&
+	return check_usmash_region(player, input) &&
 	       get_stick_y_hold_time(player, input) < plco->y_smash_frames;
 }
 
@@ -191,9 +217,14 @@ bool check_usmash_instant(const Player *player, const processed_input &input)
 	       player->input.stick.y < plco->y_smash_threshold;
 }
 
+bool check_dsmash_region(const Player *player, const processed_input &input)
+{
+	return -input.stick.y >= plco->y_smash_threshold;
+}
+
 bool check_dsmash(const Player *player, const processed_input &input)
 {
-	return -input.stick.y >= plco->y_smash_threshold &&
+	return check_dsmash_region(player, input) &&
 	       get_stick_y_hold_time(player, input) < plco->y_smash_frames;
 }
 
@@ -201,6 +232,50 @@ bool check_dsmash_instant(const Player *player, const processed_input &input)
 {
 	return check_dsmash(player, input) &&
 	       -player->input.stick.y < plco->y_smash_threshold;
+}
+
+bool check_ftilt(const Player *player, const processed_input &input)
+{
+	return input.stick.x * player->direction >= plco->ftilt_threshold;
+}
+
+bool check_ftilt_instant(const Player *player, const processed_input &input)
+{
+	return check_ftilt(player, input) &&
+	       player->input.stick.x * player->direction < plco->ftilt_threshold;
+}
+
+bool check_btilt(const Player *player, const processed_input &input)
+{
+	return -input.stick.x * player->direction >= plco->ftilt_threshold;
+}
+
+bool check_btilt_instant(const Player *player, const processed_input &input)
+{
+	return check_btilt(player, input) &&
+	       -player->input.stick.x * player->direction < plco->ftilt_threshold;
+}
+
+bool check_utilt(const Player *player, const processed_input &input)
+{
+	return input.stick.y >= plco->utilt_threshold;
+}
+
+bool check_utilt_instant(const Player *player, const processed_input &input)
+{
+	return check_utilt(player, input) &&
+	       player->input.stick.y < plco->utilt_threshold;
+}
+
+bool check_dtilt(const Player *player, const processed_input &input)
+{
+	return input.stick.y <= plco->dtilt_threshold;
+}
+
+bool check_dtilt_instant(const Player *player, const processed_input &input)
+{
+	return check_dtilt(player, input) &&
+	       player->input.stick.y > plco->dtilt_threshold;
 }
 
 bool check_down_b(const Player *player, const processed_input &input)
@@ -227,12 +302,17 @@ u32 check_aerial(const Player *player, const processed_input &input)
 	    (std::abs(last_cstick.y) < threshold_y && std::abs(input.cstick.y) >= threshold_y)) {
 		stick = input.cstick;
 	} else if (input.pressed & Button_A) {
-		// Assume Z presses during an aerial are L cancels
-		if (!player->iasa &&
-		    player->action_state >= AS_AttackAirN &&
-		    player->action_state <= AS_AttackAirLw &&
-		    (input.pressed & Button_Z)) {
-			return AS_None;
+		if (input.pressed & Button_Z) {
+			// Assume Z presses during an aerial are L cancels
+			if (!player->iasa &&
+			    player->action_state >= AS_AttackAirN &&
+			    player->action_state <= AS_AttackAirLw) {
+				return AS_None;
+			}
+
+			// Assume Z presses during jumpsquat are jc grabs
+			if (player->action_state == AS_KneeBend)
+				return AS_None;
 		}
 
 		stick = input.stick;
@@ -249,16 +329,23 @@ u32 check_aerial(const Player *player, const processed_input &input)
 		return stick.x * player->direction > 0 ? AS_AttackAirF : AS_AttackAirB;
 }
 
-extern const action_type shine;
+extern const action_type dash;
+extern const action_type dashback;
+extern const action_type turn;
 extern const action_type pivot;
+extern const action_type airdodge;
+extern const action_type shine;
+
+bool is_ground_base(const action_type *type)
+{
+	return type == &turn || type == &pivot || type == &dash ||
+	       type == &dashback || type == &airdodge;
+}
 
 const action_type dash = {
 	.name = "Dash",
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		if (action->type == &pivot)
-			return poll_delta == Si.poll.y;
-
-		return action->type == &dash || action->type == &pivot;
+		return action->type != &pivot && is_ground_base(action->type);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base) {
 		return is_grounded(player);
@@ -266,7 +353,7 @@ const action_type dash = {
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(check_fsmash_instant(player, input));
 	},
-	.success_predicate = [](const Player *player, u32 new_state) {
+	.success_predicate = [](const Player *player, s32 new_state) {
 		return new_state == AS_Dash;
 	},
 	.end_predicate = [](const Player *player) {
@@ -275,10 +362,54 @@ const action_type dash = {
 	.input_names = { nullptr }
 };
 
+const action_type dashback = {
+	.name = "Dash",
+	.must_succeed = true,
+	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+		return action->type == &pivot && poll_delta == Si.poll.y;
+	},
+	.state_predicate = [](const Player *player, const action_entry *base) {
+		return is_grounded(player) && base != nullptr;
+	},
+	.input_predicate = [](const Player *player, const processed_input &input) {
+		return bools_to_mask(check_fsmash_region(player, input));
+	},
+	.success_predicate = [](const Player *player, s32 new_state) {
+		return new_state == AS_Dash;
+	},
+	.end_predicate = [](const Player *player) {
+		return player->action_state != AS_Dash;
+	},
+	.input_names = { nullptr }
+};
+
+const action_type turn = {
+	.name = "Turn",
+	.must_succeed = true,
+	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+		return is_ground_base(action->type) && action->type != &turn
+		                                    && action->type != &pivot;
+	},
+	.state_predicate = [](const Player *player, const action_entry *base) {
+		return is_grounded(player) && player->action_state != AS_Dash;
+	},
+	.input_predicate = [](const Player *player, const processed_input &input) {
+		return bools_to_mask(check_btilt_instant(player, input));
+	},
+	.success_predicate = [](const Player *player, s32 new_state) {
+		return new_state == AS_Turn && player->as_data.Turn.tilt_turn_timer > 0;
+	},
+	.end_predicate = [](const Player *player) {
+		return player->action_state != AS_Turn;
+	},
+	.input_names = { nullptr }
+};
+
 const action_type pivot = {
 	.name = "Pivot",
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return action->type == &dash || action->type == &pivot;
+		return is_ground_base(action->type) && action->type != &turn
+		                                    && action->type != &pivot;
 	},
 	.state_predicate = [](const Player *player, const action_entry *base) {
 		return is_grounded(player);
@@ -286,8 +417,8 @@ const action_type pivot = {
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(check_bsmash_instant(player, input));
 	},
-	.success_predicate = [](const Player *player, u32 new_state) {
-		return new_state == AS_Turn;
+	.success_predicate = [](const Player *player, s32 new_state) {
+		return new_state == AS_Turn && player->as_data.Turn.tilt_turn_timer <= 0;
 	},
 	.end_predicate = [](const Player *player) {
 		return player->action_state != AS_Turn && player->action_state != AS_Dash;
@@ -295,20 +426,42 @@ const action_type pivot = {
 	.input_names = { nullptr }
 };
 
-const action_type jump = {
-	.name = "Jump",
+const action_type empty_pivot = {
+	.name = "Empty Pivot",
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return action->type == &shine || action->type == &dash;
+		// Check most recent action within 2f for a pivot
+		return action->type != &dashback && poll_delta <= 2 * Si.poll.y;
 	},
 	.state_predicate = [](const Player *player, const action_entry *base) {
-		return !is_airborne(player);
+		return is_grounded(player) && base != nullptr && base->type == &pivot;
+	},
+	.base_input_predicate = [](const Player *player, const processed_input &input,
+	                                                 const processed_input &base_input) {
+		const auto sign = std::copysign(1.f, base_input.stick.x);
+		return bools_to_mask(input.stick.x * sign < plco->x_smash_threshold);
+	},
+	.success_predicate = [](const Player *player, s32 new_state) {
+		return player->action_state == AS_Turn && new_state == AS_None;
+	},
+	.input_names = { nullptr }
+};
+
+const action_type jump = {
+	.name = "Jump",
+	.plinkable = true,
+	.end_delay = 5,
+	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+		return action->type == &shine || is_ground_base(action->type);
+	},
+	.state_predicate = [](const Player *player, const action_entry *base) {
+		return is_grounded(player);
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(input.pressed & Button_X,
 		                     input.pressed & Button_Y,
 		                     check_usmash_instant(player, input));
 	},
-	.success_predicate = [](const Player *player, u32 new_state) {
+	.success_predicate = [](const Player *player, s32 new_state) {
 		return new_state == AS_KneeBend;
 	},
 	.end_predicate = [](const Player *player) {
@@ -330,7 +483,7 @@ const action_type dj = {
 		                     input.pressed & Button_Y,
 		                     check_usmash_instant(player, input));
 	},
-	.success_predicate = [](const Player *player, u32 new_state) {
+	.success_predicate = [](const Player *player, s32 new_state) {
 		return new_state == AS_JumpAerialF ||
 		       new_state == AS_JumpAerialB;
 	},
@@ -352,21 +505,22 @@ const action_type aerial = {
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(check_aerial(player, input) == state);
 	},
-	.success_predicate = [](const Player *player, u32 new_state) {
+	.success_predicate = [](const Player *player, s32 new_state) {
 		return new_state == state;
 	},
 	.input_names = { nullptr }
 };
 
-const action_type &nair = aerial<"Nair", AS_AttackAirN>;
-const action_type &fair = aerial<"Fair", AS_AttackAirF>;
-const action_type &bair = aerial<"Bair", AS_AttackAirB>;
-const action_type &uair = aerial<"Uair", AS_AttackAirHi>;
-const action_type &dair = aerial<"Dair", AS_AttackAirLw>;
+const action_type nair = aerial<"Nair", AS_AttackAirN>;
+const action_type fair = aerial<"Fair", AS_AttackAirF>;
+const action_type bair = aerial<"Bair", AS_AttackAirB>;
+const action_type uair = aerial<"Uair", AS_AttackAirHi>;
+const action_type dair = aerial<"Dair", AS_AttackAirLw>;
 
 const action_type airdodge = {
 	.name = "Air Dodge",
 	.plinkable = true,
+	.end_delay = 5,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
 		return action->type == &jump || action->type == &dj;
 	},
@@ -377,16 +531,37 @@ const action_type airdodge = {
 		return bools_to_mask(input.pressed & Button_L,
 		                     input.pressed & Button_R);
 	},
-	.success_predicate = [](const Player *player, u32 new_state) {
+	.success_predicate = [](const Player *player, s32 new_state) {
 		return new_state == AS_EscapeAir;
 	},
+	.end_predicate = [](const Player *player) {
+		return player->action_state != AS_EscapeAir &&
+		       player->action_state != AS_LandingFallSpecial;
+	},
 	.input_names = { "L", "R" }
+};
+
+const action_type grab = {
+	.name = "Grab",
+	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+		return is_ground_base(action->type) || action->type == &jump;
+	},
+	.state_predicate = [](const Player *player, const action_entry *base) {
+		return is_grounded(player) || player->action_state == AS_KneeBend;
+	},
+	.input_predicate = [](const Player *player, const processed_input &input) {
+		return bools_to_mask(all_set(input.pressed, Button_AnalogLR | Button_A));
+	},
+	.success_predicate = [](const Player *player, s32 new_state) {
+		return new_state == AS_Catch || new_state == AS_CatchDash;
+	},
+	.input_names = { nullptr }
 };
 
 const action_type shine = {
 	.name = "Shine",
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return action->type == &jump;
+		return is_ground_base(action->type) || action->type == &jump;
 	},
 	.state_predicate = [](const Player *player, const action_entry *base) {
 		return !is_on_ledge(player);
@@ -394,7 +569,7 @@ const action_type shine = {
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(check_down_b(player, input));
 	},
-	.success_predicate = [](const Player *player, u32 new_state) {
+	.success_predicate = [](const Player *player, s32 new_state) {
 		return new_state == AS_Fox_SpecialLwStart ||
 		       new_state == AS_Fox_SpecialAirLwStart;
 	},
@@ -409,7 +584,10 @@ const action_type shine = {
 
 static const action_type *action_types[] = {
 	&action_type_definitions::dash,
+	&action_type_definitions::dashback,
+	&action_type_definitions::turn,
 	&action_type_definitions::pivot,
+	&action_type_definitions::empty_pivot,
 	&action_type_definitions::jump,
 	&action_type_definitions::dj,
 	&action_type_definitions::nair,
@@ -418,6 +596,7 @@ static const action_type *action_types[] = {
 	&action_type_definitions::uair,
 	&action_type_definitions::dair,
 	&action_type_definitions::airdodge,
+	&action_type_definitions::grab,
 	&action_type_definitions::shine
 };
 
@@ -443,12 +622,6 @@ static void detect_action_for_input(const Player *player, const processed_input 
 {
 	const auto &type = *action_types[type_index];
 
-	// Don't detect the same inputs for the same action repeatedly in one frame
-	auto mask = type.input_predicate(player, input) & ~detected_inputs[type_index];
-
-	if (mask == 0)
-		return;
-
 	const action_entry *base = nullptr;
 	auto plinked = false;
 
@@ -456,6 +629,9 @@ static void detect_action_for_input(const Player *player, const processed_input 
 	for (size_t offset = 0; offset < action_buffer.stored(); offset++) {
 		const auto *action = action_buffer.head(offset);
 		const auto poll_delta = poll_index - action->poll_index;
+
+		if (action->type->must_succeed && !action->success)
+			continue;
 
 		if (base == nullptr && type.is_base_action != nullptr) {
 			// Count the 2nd input in a plink even if the base action ended
@@ -473,6 +649,21 @@ static void detect_action_for_input(const Player *player, const processed_input 
 	if (!plinked && type.state_predicate != nullptr && !type.state_predicate(player, base))
 		return;
 
+	// Don't detect the same inputs for the same action repeatedly in one frame
+	auto mask = 0;
+
+	if (type.input_predicate != nullptr)
+		mask |= type.input_predicate(player, input);
+
+	if (type.base_input_predicate != nullptr && base != nullptr)
+		mask |= type.base_input_predicate(player, input, base->input);
+
+	// Don't detect the same inputs for the same action repeatedly in one frame
+	mask &= ~detected_inputs[type_index];
+
+	if (mask == 0)
+		return;
+
 	detected_inputs[type_index] |= mask;
 
 	// Add the action multiple times if triggered multiple times in one poll
@@ -484,6 +675,7 @@ static void detect_action_for_input(const Player *player, const processed_input 
 			.type        = &type,
 			.base_action = base,
 			.poll_index  = poll_index,
+			.input       = input,
 			.frame       = draw_frames,
 			.input_type  = (u8)input_type,
 			.port        = player->port
@@ -573,13 +765,20 @@ EVENT_HANDLER(events::player::think::input::post, [](Player *player, u32 old_sta
 			continue;
 
 		// Check if action can still be used as base
-		if (action->active && type->end_predicate != nullptr)
-			action->active = !type->end_predicate(player);
+		if (action->active && type->end_predicate != nullptr && action->end_timer == 0) {
+			if (type->end_predicate(player))
+				action->end_timer = type->end_delay + 1;
+		}
+
+		if (action->end_timer > 0 && --action->end_timer == 0)
+			action->active = false;
 
 		// Figure out which actions succeeded
 		if (!action->confirmed) {
 			action->success = type->success_predicate(player, new_state);
 			action->confirmed = true;
+			if (action->type->must_succeed && !action->success)
+				action->active = false;
 		}
 	}
 });
@@ -600,6 +799,10 @@ EVENT_HANDLER(events::imgui::draw, []()
 
 	for (size_t offset = 0; offset < display_count; offset++) {
 		const auto *action = action_buffer.head(offset);
+
+		if (action->type->must_succeed && !action->success)
+			continue;
+
                 const auto *base_action = action->base_action;
                 const auto *input_name = action->type->input_names[action->input_type];
 

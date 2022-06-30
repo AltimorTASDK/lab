@@ -4,6 +4,7 @@
 #include "os/serial.h"
 #include "hsd/pad.h"
 #include "util/vector.h"
+#include "imgui/events.h"
 #include "imgui/backends/imgui_impl_gc.h"
 #include <imgui.h>
 
@@ -236,6 +237,9 @@ static void ImGui_ImplGC_CheckAnalog(float value, float last_value, int up_key, 
 
 static void ImGui_ImplGC_PollPad(s32 chan)
 {
+	if (!events::imgui::capture_input.fire())
+		return;
+
 	auto *bd = ImGui_ImplGC_GetBackendData();
 	const auto &status = HSD_PadMasterStatus[chan];
 

@@ -8,3 +8,9 @@ constexpr auto bools_to_mask(auto ...values)
 	((result |= values ? (1 << bit) : 0, bit++), ...);
 	return result;
 }
+
+// Check if every bit in mask is set in value
+constexpr bool all_set(auto value, auto mask)
+{
+	return (value & mask) == mask;
+}

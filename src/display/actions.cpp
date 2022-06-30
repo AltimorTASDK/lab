@@ -24,7 +24,7 @@
 // How many recent inputs to remember
 constexpr size_t INPUT_BUFFER_SIZE = MAX_POLLS_PER_FRAME * PAD_QNUM;
 // How many recent actions to remember
-constexpr size_t ACTION_BUFFER_SIZE = 32;
+constexpr size_t ACTION_BUFFER_SIZE = 64;
 // How many actions to display
 constexpr size_t ACTION_HISTORY = 10;
 // Frame window to consider a duplicate action input a plink
@@ -894,14 +894,17 @@ EVENT_HANDLER(events::imgui::draw, []()
 
 	for (size_t offset = 0; offset < max_count && displayed < ACTION_HISTORY; offset++) {
 		const auto *action = action_buffer.head(offset);
+                const auto *base_action = action->base_action;
+                const auto *input_name = action->type->input_names[action->input_type];
 
 		if (action->type->must_succeed && !action->success)
 			continue;
 		else
 			displayed++;
 
-                const auto *base_action = action->base_action;
-                const auto *input_name = action->type->input_names[action->input_type];
+		// Check if base action got pushed out of the buffer
+		if (base_action != nullptr && base_action->poll_index > action->poll_index)
+			break;
 
                 ImGui::TableNextRow();
 		ImGui::TableNextColumn();

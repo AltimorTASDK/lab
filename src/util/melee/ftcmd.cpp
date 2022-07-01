@@ -5,9 +5,6 @@
 #include <cfloat>
 #include <gctypes.h>
 
-#warning temp
-#include "os/os.h"
-
 void parse_ftcmd(const Player *player, u32 subaction, auto &&callback)
 {
 	const auto *sa_info = Player_GetSubactionInfo(player, subaction);
@@ -34,9 +31,10 @@ void parse_ftcmd(const Player *player, u32 subaction, auto &&callback)
 			ftcmd.timer = -ftcmd.frame;
 		}
 
-		while (ftcmd.timer > 0) {
-			ftcmd.frame++;
-			ftcmd.timer--;
+		if (ftcmd.timer > 0) {
+			const auto delay = std::ceil(ftcmd.timer);
+			ftcmd.frame += delay;
+			ftcmd.timer -= delay;
 		}
 	}
 }

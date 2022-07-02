@@ -1057,7 +1057,7 @@ static void detect_action_for_input(const Player *player, const processed_input 
 	}
 
 	// Check if type requires base action
-	if (base && type.needs_base)
+	if (base == nullptr && type.needs_base)
 		return;
 
 	// Check action prerequisites unless plinked

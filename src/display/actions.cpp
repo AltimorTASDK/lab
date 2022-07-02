@@ -67,8 +67,6 @@ struct action_type {
 	const char *name;
 	// If true, can only happen if a base action is found
 	bool needs_base;
-	// Index in action_type_definitions
-	size_t index;
 	// If true, ignore state/base action end if last action input is within PLINK_WINDOW frames
 	bool plinkable;
 	// If true, action must succeed to be active or displayed
@@ -1013,12 +1011,6 @@ constexpr auto action_type_count = std::extent_v<decltype(action_types)>;
 static ring_buffer<saved_input, INPUT_BUFFER_SIZE> input_buffer[4];
 static ring_buffer<action_entry, ACTION_BUFFER_SIZE> action_buffer;
 static unsigned int draw_frames;
-
-[[gnu::constructor]] static void set_action_type_indices()
-{
-	for (size_t i = 0; i < action_type_count; i++)
-		const_cast<action_type*>(action_types[i])->index = i;
-}
 
 EVENT_HANDLER(events::input::poll, [](s32 chan, const SIPadStatus &status)
 {

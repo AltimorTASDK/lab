@@ -119,6 +119,11 @@ struct action_entry {
 	u8 input_type;
 	// Controller port
 	u8 port;
+
+	bool is_type(const auto &...types) const
+	{
+		return ((type == &types) || ...);
+	}
 };
 
 namespace action_type_definitions {
@@ -346,9 +351,10 @@ extern const action_type turn;
 extern const action_type pivot;
 extern const action_type dash;
 extern const action_type dashback;
+extern const action_type slow_dashback;
 extern const action_type run;
 extern const action_type runbrake;
-extern const action_type run_squat;
+extern const action_type squat;
 extern const action_type squat;
 extern const action_type jump;
 extern const action_type dj;
@@ -367,27 +373,39 @@ extern const action_type grab;
 extern const action_type airdodge;
 extern const action_type shine;
 
-bool is_ground_attack_base(const action_type *type)
+bool is_ground_attack_base(const action_entry *action)
 {
-	return type == &fsmash || type == &usmash || type == &dsmash ||
-	       type == &ftilt  || type == &utilt  || type == &dtilt  ||
-	       type == &grab;
+	return action->is_type(fsmash, usmash, dsmash,
+	                       ftilt, utilt, dtilt,
+	                       grab);
 }
 
-bool is_ground_base(const action_type *type)
+bool is_ground_base(const action_entry *action)
 {
-	return is_ground_attack_base(type) ||
-	       type == &turn || type == &pivot ||
-	       type == &dash || type == &dashback || type == &run || type == &runbrake ||
-	       type == &run_squat || type == &squat ||
-	       type == &airdodge;
+	return is_ground_attack_base(action) ||
+	       action->is_type(turn, pivot, dash, dashback, slow_dashback,
+	                       run, runbrake, squat, airdodge);
 }
 
-bool is_air_base(const action_type *type)
+bool is_air_base(const action_entry *action)
 {
-	return type == &nair || type == &fair || type == &bair || type == &uair || type == &dair ||
-	       type == &jump || type == &dj || type == &dash || type == &dashback ||
-	       type == &airdodge;
+	return action->is_type(nair, fair, bair, uair, dair,
+	                       jump, dj, airdodge);
+}
+
+bool frame_min(size_t poll_delta, size_t min)
+{
+	return poll_delta >= min * Si.poll.y;
+}
+
+bool frame_max(size_t poll_delta, size_t max)
+{
+	return poll_delta <= max * Si.poll.y;
+}
+
+bool frame_range(size_t poll_delta, size_t min, size_t max)
+{
+	return frame_min(poll_delta, min) && frame_max(poll_delta, max);
 }
 
 const action_type turn = {
@@ -395,8 +413,7 @@ const action_type turn = {
 	.must_succeed = true,
 	.success_window = 2,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return is_ground_base(action->type) && action->type != &turn
-		                                    && action->type != &pivot;
+		return is_ground_base(action) && !action->is_type(turn, pivot);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		return is_grounded(player) && player->action_state != AS_Dash &&
@@ -418,8 +435,7 @@ const action_type pivot = {
 	.name = "Pivot",
 	.success_window = 2,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return is_ground_base(action->type) && action->type != &turn
-		                                    && action->type != &pivot;
+		return is_ground_base(action) && !action->is_type(turn, pivot);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		return is_grounded(player) && player->action_state != AS_Turn;
@@ -439,11 +455,11 @@ const action_type pivot = {
 const action_type empty_pivot = {
 	.name = "Empty Pivot",
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		// Check most recent action within 2f for a pivot
-		return action->type != &dashback && poll_delta <= 2 * Si.poll.y;
+		return !action->is_type(dashback, slow_dashback);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return is_grounded(player) && base != nullptr && base->type == &pivot;
+		// Check most recent action within 2f for a pivot
+		return base != nullptr && base->is_type(pivot) && frame_max(poll_delta, 2);
 	},
 	.base_input_predicate = [](const Player *player, const processed_input &input,
 	                                                 const processed_input &base_input) {
@@ -460,11 +476,10 @@ const action_type dash = {
 	.name = "Dash",
 	.success_window = 2,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return is_ground_base(action->type) && action->type != &pivot
-		                                    && action->type != &turn;
+		return is_ground_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return is_grounded(player) && (base == nullptr || base->type != &run);
+		return is_grounded(player) && (base == nullptr || !base->is_type(run, turn, pivot));
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(check_fsmash_instant(player, input));
@@ -481,14 +496,40 @@ const action_type dash = {
 const action_type dashback = {
 	.name = "Dash",
 	.must_succeed = true,
+	.success_window = 2,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		if (action->type != &pivot && action->type != &turn)
-			return false;
-
-		return poll_delta >= Si.poll.y && poll_delta <= Si.poll.y * 2;
+		return action->is_type(dashback, turn, pivot);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return is_grounded(player) && base != nullptr;
+		return is_grounded(player) && base != nullptr && !base->is_type(dashback) &&
+		       frame_range(poll_delta, 1, 2);
+	},
+	.base_input_predicate = [](const Player *player, const processed_input &input,
+	                                                 const processed_input &base_input) {
+		const auto sign = std::copysign(1.f, base_input.stick.x);
+		return bools_to_mask(input.stick.x * sign >= plco->x_smash_threshold);
+	},
+	.success_predicate = [](const Player *player, s32 new_state) {
+		return new_state == AS_Dash;
+	},
+	.end_predicate = [](const Player *player) {
+		return player->action_state != AS_Dash;
+	},
+	.input_names = { nullptr }
+};
+
+const action_type slow_dashback = {
+	.name = "Dash",
+	.must_succeed = true,
+	.success_window = 2,
+	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+		return action->is_type(slow_dashback, turn, pivot);
+	},
+	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
+		const auto tilt_turn_frames = (size_t)player->char_stats.tilt_turn_frames;
+
+		return is_grounded(player) && base != nullptr && !base->is_type(slow_dashback) &&
+		       frame_range(poll_delta, tilt_turn_frames, tilt_turn_frames + 1);
 	},
 	.base_input_predicate = [](const Player *player, const processed_input &input,
 	                                                 const processed_input &base_input) {
@@ -511,11 +552,9 @@ const action_type run = {
 		return true;
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		if (base == nullptr || (base->type != &dash && base->type != &dashback))
-			return false;
-
-		const auto window = get_initial_dash(player) * Si.poll.y;
-		return player->action_state == AS_Dash && poll_delta >= window;
+		return base != nullptr && base->is_type(dash, dashback, slow_dashback) &&
+		       frame_min(poll_delta, get_initial_dash(player)) &&
+		       player->action_state == AS_Dash;
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(input.stick.x * player->direction >= plco->run_threshold);
@@ -532,7 +571,7 @@ const action_type run = {
 const action_type runbrake = {
 	.name = "Run Brake",
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return action->type == &run;
+		return action->is_type(run);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		return is_grounded(player) && base != nullptr;
@@ -551,39 +590,16 @@ const action_type runbrake = {
 	.input_names = { nullptr }
 };
 
-const action_type run_squat = {
-	.name = "Crouch",
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return action->type == &runbrake || action->type == &run_squat;
-	},
-	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return is_grounded(player) && base != nullptr &&
-		       base->type != &run_squat && poll_delta >= Si.poll.y;
-	},
-	.input_predicate = [](const Player *player, const processed_input &input) {
-		return bools_to_mask(input.stick.y < -plco->squat_threshold);
-	},
-	.success_predicate = [](const Player *player, s32 new_state) {
-		return new_state == AS_Squat;
-	},
-	.end_predicate = [](const Player *player) {
-		return player->action_state < AS_Squat || player->action_state > AS_SquatRv;
-	},
-	.input_names = { nullptr }
-};
-
 const action_type squat = {
 	.name = "Crouch",
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return action->type == &runbrake || action->type == &run ||
-		       action->type == &dash || action->type == &dashback;
+		return action->is_type(runbrake, squat);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return is_grounded(player) && base == nullptr;
+		return base != nullptr && !base->is_type(squat) && frame_min(poll_delta, 1);
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
-		return bools_to_mask(input.stick.y         <  -plco->squat_threshold &&
-		                     player->input.stick.y >= -plco->squat_threshold);
+		return bools_to_mask(input.stick.y < -plco->squat_threshold);
 	},
 	.success_predicate = [](const Player *player, s32 new_state) {
 		return new_state == AS_Squat;
@@ -598,7 +614,7 @@ const action_type jump = {
 	.name = "Jump",
 	.success_window = 4,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return action->type == &shine || is_ground_base(action->type);
+		return is_ground_base(action) || action->is_type(shine);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		return is_grounded(player);
@@ -622,7 +638,7 @@ const action_type dj = {
 	.name = "DJ",
 	.success_window = 4,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return action->type == &jump || action->type == &dj || action->type == &shine;
+		return is_air_base(action) || action->is_type(shine);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		return is_airborne(player);
@@ -645,24 +661,26 @@ const action_type dj = {
 template<string_literal name, u32 state>
 const action_type aerial = {
 	.name = name.value,
+	.end_delay = ACT_OUT_WINDOW,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
 		if constexpr (state == AS_AttackAirHi) {
-			if (action->type == &usmash)
+			if (action->is_type(usmash))
 				return true;
 		}
 
-		return action->type == &jump || action->type == &dj;
+		return is_air_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		if constexpr (state == AS_AttackAirHi) {
-			if (base != nullptr && base->type == &usmash)
-				return false;
-
-			if (base != nullptr && base->type == &jump) {
-				// Assume jc usmash if guaranteed to come out during jumpsquat
-				const auto window = (size_t)player->char_stats.jumpsquat - 1;
-				if (poll_delta <= window * Si.poll.y)
+			if (base != nullptr) {
+				if (base->is_type(usmash))
 					return false;
+
+				// Assume jc usmash if guaranteed to come out during jumpsquat
+				const auto jumpsquat = (size_t)player->char_stats.jumpsquat;
+
+				if (base->is_type(jump) && frame_max(poll_delta, jumpsquat - 1))
+						return false;
 			}
 		}
 		return is_airborne(player);
@@ -672,6 +690,9 @@ const action_type aerial = {
 	},
 	.success_predicate = [](const Player *player, s32 new_state) {
 		return new_state == state;
+	},
+	.end_predicate = [](const Player *player) {
+		return player->action_state != state;
 	},
 	.input_names = { nullptr }
 };
@@ -686,7 +707,7 @@ const action_type fsmash = {
 	.name = "FSmash",
 	.end_delay = ACT_OUT_WINDOW,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return is_ground_base(action->type);
+		return is_ground_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		return is_grounded(player);
@@ -712,10 +733,10 @@ const action_type usmash = {
 	.name = "USmash",
 	.end_delay = ACT_OUT_WINDOW,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return is_ground_base(action->type) || action->type == &jump;
+		return is_ground_base(action) || action->is_type(jump);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return is_grounded(player) || player->action_state == AS_KneeBend;
+		return is_grounded(player) || (base != nullptr && base->is_type(jump));
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		const auto stick  = check_usmash(player, input) && (input.pressed & Button_A);
@@ -737,7 +758,7 @@ const action_type dsmash = {
 	.name = "DSmash",
 	.end_delay = ACT_OUT_WINDOW,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return is_ground_base(action->type);
+		return is_ground_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		return is_grounded(player);
@@ -762,7 +783,7 @@ const action_type ftilt = {
 	.name = "FTilt",
 	.end_delay = ACT_OUT_WINDOW,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return is_ground_base(action->type);
+		return is_ground_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		return is_grounded(player);
@@ -787,7 +808,7 @@ const action_type utilt = {
 	.name = "UTilt",
 	.end_delay = ACT_OUT_WINDOW,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return is_ground_base(action->type);
+		return is_ground_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		return is_grounded(player);
@@ -811,7 +832,7 @@ const action_type dtilt = {
 	.name = "DTilt",
 	.end_delay = ACT_OUT_WINDOW,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return is_ground_base(action->type);
+		return is_ground_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		return is_grounded(player);
@@ -835,7 +856,7 @@ const action_type grab = {
 	.name = "Grab",
 	.end_delay = ACT_OUT_WINDOW,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return is_ground_base(action->type) || action->type == &jump;
+		return is_ground_base(action) || action->is_type(jump);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		return is_grounded(player) || player->action_state == AS_KneeBend;
@@ -857,10 +878,10 @@ const action_type airdodge = {
 	.plinkable = true,
 	.end_delay = ACT_OUT_WINDOW,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return action->type == &jump || action->type == &dj;
+		return is_air_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return base != nullptr || is_airborne(player);
+		return (base != nullptr && base->is_type(jump)) || is_airborne(player);
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(input.pressed & Button_L,
@@ -879,7 +900,7 @@ const action_type airdodge = {
 const action_type shine = {
 	.name = "Shine",
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return is_ground_base(action->type) || action->type == &jump;
+		return is_ground_base(action) || is_air_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		if (player->character_id != CID_Fox && player->character_id != CID_Falco)
@@ -909,7 +930,6 @@ static const action_type *action_types[] = {
 	&action_type_definitions::empty_pivot,
 	&action_type_definitions::run,
 	&action_type_definitions::runbrake,
-	&action_type_definitions::run_squat,
 	&action_type_definitions::squat,
 	&action_type_definitions::dash,
 	&action_type_definitions::dashback,

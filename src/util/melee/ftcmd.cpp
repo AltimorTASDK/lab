@@ -2,6 +2,7 @@
 #include "melee/ftcmd.h"
 #include "melee/player.h"
 #include "melee/subaction.h"
+#include "util/melee/character.h"
 #include "util/melee/ftcmd.h"
 #include <cfloat>
 #include <gctypes.h>
@@ -56,14 +57,6 @@ static int find_flag_set(const Player *player, s32 subaction, u32 flag, bool val
 	});
 
 	return frame;
-}
-
-static ActionStateInfo *get_action_state_info(const Player *player, s32 state)
-{
-	if (state >= AS_CommonMax)
-		return &player->character_as_table[state - AS_CommonMax];
-	else
-		return &player->common_as_table[state];
 }
 
 static int initial_dash_cache[CID_Max] = { 0 };

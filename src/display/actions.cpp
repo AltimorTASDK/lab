@@ -135,12 +135,12 @@ enum class state_type {
 	knockdown
 };
 
-bool in_state(const Player *player, u32 state)
+bool in_state(const Player *player, s32 state)
 {
 	return player->action_state == state;
 }
 
-bool in_state_range(const Player *player, u32 start, u32 end)
+bool in_state_range(const Player *player, s32 start, s32 end)
 {
 	return player->action_state >= start && player->action_state <= end;
 }
@@ -688,7 +688,8 @@ const action_type dj = {
 		return is_air_base(action) || action->is_type(shine, shine_turn);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return is_airborne(player) && !in_multijump_state(player);
+		return is_airborne(player) && !in_multijump_state(player) &&
+		       player->jumps_used < player->char_stats.jumps;
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(input.pressed & Button_X,
@@ -717,8 +718,9 @@ const action_type multijump = {
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		// Check for buffering repeated djs
 		return in_multijump_state(player) &&
+		       player->jumps_used < player->char_stats.jumps &&
 		       base->is_type(dj, multijump) &&
-		       frame_min(poll_delta, get_multijump_cooldown(player) - 1);
+		       frame_min(poll_delta, get_multijump_cooldown(player));
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(input.buttons & Button_X,
@@ -739,23 +741,20 @@ const action_type aerial = {
 	.name = name.value,
 	.end_delay = ACT_OUT_WINDOW,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		if constexpr (state == AS_AttackAirHi) {
-			if (action->is_type(usmash))
+		if (state == AS_AttackAirHi && action->is_type(usmash))
 				return true;
-		}
 
 		return is_air_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		if constexpr (state == AS_AttackAirHi) {
-			if (base != nullptr) {
-				if (base->is_type(usmash))
-					return false;
+		if (state == AS_AttackAirHi && base != nullptr) {
+			if (base->is_type(usmash))
+				return false;
 
-				// Assume jc usmash if guaranteed to come out during jumpsquat
+			// Assume jc usmash if guaranteed to come out during jumpsquat
+			if (base->is_type(jump)) {
 				const auto jumpsquat = (size_t)player->char_stats.jumpsquat;
-
-				if (base->is_type(jump) && frame_max(poll_delta, jumpsquat - 1))
+				if (frame_max(poll_delta, jumpsquat - 1))
 						return false;
 			}
 		}

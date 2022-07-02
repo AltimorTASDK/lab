@@ -9,7 +9,7 @@
 static void parse_ftcmd(const Player *player, s32 subaction, auto &&callback)
 {
 	const auto *sa_info = Player_GetSubactionInfo(player, subaction);
-	FtCmdState ftcmd = { .script = sa_info->script };
+	FtCmdState ftcmd = { .frame = 1, .script = sa_info->script };
 
 	while (true) {
 		while (ftcmd.timer <= 0) {
@@ -42,13 +42,13 @@ static void parse_ftcmd(const Player *player, s32 subaction, auto &&callback)
 
 static int find_flag_set(const Player *player, s32 subaction, u32 flag, bool value)
 {
-	int frame = -1;
+	int frame = 0;
 
 	parse_ftcmd(player, subaction, [&](const FtCmdState &ftcmd, u32 opcode) {
 		const auto *arg = (FtCmdArg_SetFlag*)ftcmd.script;
 
 		if (opcode == FtCmd_SetFlag && arg->flag == flag && (bool)arg->value == value) {
-			frame = (u32)ftcmd.frame - 1;
+			frame = (u32)ftcmd.frame;
 			return true;
 		}
 
@@ -66,28 +66,28 @@ static ActionStateInfo *get_action_state_info(const Player *player, s32 state)
 		return &player->common_as_table[state];
 }
 
-static int initial_dash_cache[CID_Max] = { -1 };
+static int initial_dash_cache[CID_Max] = { 0 };
 
 int get_initial_dash(const Player *player)
 {
 	auto *cache = &initial_dash_cache[player->character_id];
 
-	if (*cache == -1)
-		*cache = find_flag_set(player, SA_Dash, 0, true);
+	if (*cache == 0)
+		*cache = find_flag_set(player, SA_Dash, 0, true) - 1;
 
 	return *cache;
 }
 
-static int multijump_cooldown_cache[CID_Max] = { -1 };
+static int multijump_cooldown_cache[CID_Max] = { 0 };
 
 int get_multijump_cooldown(const Player *player)
 {
 	if (!player->multijump)
-		return -1;
+		return 0;
 
 	auto *cache = &multijump_cooldown_cache[player->character_id];
 
-	if (*cache == -1) {
+	if (*cache == 0) {
 		const auto state = player->extra_stats.multijump_stats->start_state;
 		const auto subaction = get_action_state_info(player, state)->subaction;
 		*cache = find_flag_set(player, subaction, 0, true);

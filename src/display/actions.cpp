@@ -150,6 +150,24 @@ bool is_char(const Player *player, auto ...characters)
 	return ((player->character_id == characters) || ...);
 }
 
+bool is_multijump_state(const Player *player, s32 state)
+{
+	if (!player->multijump)
+		return false;
+
+	const auto *stats = player->extra_stats.multijump_stats;
+	const auto start1 = stats->start_state;
+	const auto start2 = stats->start_state_helmet;
+
+	return (state >= start1 && state < start1 + stats->state_count) ||
+	       (state >= start2 && state < start2 + stats->state_count);
+}
+
+bool in_multijump_state(const Player *player)
+{
+	return is_multijump_state(player, player->action_state);
+}
+
 state_type get_state_type(const Player *player)
 {
 	if (in_state_range(player, AS_CliffCatch, AS_CliffJumpQuick2))
@@ -380,6 +398,7 @@ extern const action_type squat;
 extern const action_type squat;
 extern const action_type jump;
 extern const action_type dj;
+extern const action_type multijump;
 extern const action_type nair;
 extern const action_type fair;
 extern const action_type bair;
@@ -413,7 +432,7 @@ bool is_ground_base(const action_entry *action)
 bool is_air_base(const action_entry *action)
 {
 	return action->is_type(nair, fair, bair, uair, dair,
-	                       jump, dj);
+	                       jump, dj, multijump);
 }
 
 bool frame_min(size_t poll_delta, size_t min)
@@ -580,7 +599,7 @@ const action_type run = {
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		return base->is_type(dash, dashback, slow_dashback) &&
-		       frame_min(poll_delta, get_initial_dash(player)) &&
+		       frame_min(poll_delta, (size_t)get_initial_dash(player)) &&
 		       player->action_state == AS_Dash;
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
@@ -662,7 +681,6 @@ const action_type jump = {
 	.input_names = { "X", "Y", "Up" }
 };
 
-#warning TODO: multijumps
 const action_type dj = {
 	.name = "DJ",
 	.success_window = 4,
@@ -670,7 +688,7 @@ const action_type dj = {
 		return is_air_base(action) || action->is_type(shine, shine_turn);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return is_airborne(player);
+		return is_airborne(player) && !in_multijump_state(player);
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(input.pressed & Button_X,
@@ -678,8 +696,37 @@ const action_type dj = {
 		                     check_usmash_instant(player, input));
 	},
 	.success_predicate = [](const Player *player, s32 new_state) {
-		return new_state == AS_JumpAerialF ||
-		       new_state == AS_JumpAerialB;
+		if (player->multijump)
+			return is_multijump_state(player, new_state);
+		else
+			return new_state == AS_JumpAerialF || new_state == AS_JumpAerialB;
+	},
+	.end_predicate = [](const Player *player) {
+		return !is_airborne(player);
+	},
+	.input_names = { "X", "Y", "Up" }
+};
+
+const action_type multijump = {
+	.name = "DJ",
+	.needs_base = true,
+	.success_window = 4,
+	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+		return true;
+	},
+	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
+		// Check for buffering repeated djs
+		return in_multijump_state(player) &&
+		       base->is_type(dj, multijump)) &&
+		       frame_min(poll_delta, get_multijump_cooldown(player) - 1);
+	},
+	.input_predicate = [](const Player *player, const processed_input &input) {
+		return bools_to_mask(input.buttons & Button_X,
+		                     input.buttons & Button_Y,
+		                     check_usmash_region(player, input));
+	},
+	.success_predicate = [](const Player *player, s32 new_state) {
+		return is_multijump_state(player, new_state);
 	},
 	.end_predicate = [](const Player *player) {
 		return !is_airborne(player);
@@ -990,6 +1037,7 @@ static const action_type *action_types[] = {
 	&action_type_definitions::slow_dashback,
 	&action_type_definitions::jump,
 	&action_type_definitions::dj,
+	&action_type_definitions::multijump,
 	&action_type_definitions::nair,
 	&action_type_definitions::fair,
 	&action_type_definitions::bair,

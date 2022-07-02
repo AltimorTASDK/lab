@@ -61,16 +61,16 @@ static int find_flag_set(const Player *player, s32 subaction, u32 flag, bool val
 static ActionStateInfo *get_action_state_info(const Player *player, s32 state)
 {
 	if (state >= AS_CommonMax)
-		return player->character_as_table[state - AS_CommonMax];
+		return &player->character_as_table[state - AS_CommonMax];
 	else
-		return player->common_as_table[state];
+		return &player->common_as_table[state];
 }
 
 static int initial_dash_cache[CID_Max] = { -1 };
 
 int get_initial_dash(const Player *player)
 {
-	auto *cache = initial_dash_cache[player->character_id];
+	auto *cache = &initial_dash_cache[player->character_id];
 
 	if (*cache == -1)
 		*cache = find_flag_set(player, SA_Dash, 0, true);
@@ -85,7 +85,7 @@ int get_multijump_cooldown(const Player *player)
 	if (!player->multijump)
 		return -1;
 
-	auto *cache = multijump_cooldown_cache[player->character_id];
+	auto *cache = &multijump_cooldown_cache[player->character_id];
 
 	if (*cache == -1) {
 		const auto state = player->extra_stats.multijump_stats->start_state;

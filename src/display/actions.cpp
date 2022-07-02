@@ -159,8 +159,8 @@ bool is_multijump_state(const Player *player, s32 state)
 	const auto start1 = stats->start_state;
 	const auto start2 = stats->start_state_helmet;
 
-	return (state >= start1 && state < start1 + stats->state_count) ||
-	       (state >= start2 && state < start2 + stats->state_count);
+	return (start1 != -1 && state >= start1 && state < start1 + stats->state_count) ||
+	       (start2 != -1 && state >= start2 && state < start2 + stats->state_count);
 }
 
 bool in_multijump_state(const Player *player)
@@ -173,15 +173,15 @@ state_type get_state_type(const Player *player)
 	if (in_state_range(player, AS_CliffCatch, AS_CliffJumpQuick2))
 		return state_type::ledge;
 
-	// Consider inputs in jumpsquat to be attempted airborne inputs
-	if (player->action_state == AS_KneeBend || player->airborne)
-		return state_type::air;
-
 	if (in_state_range(player, AS_DownBoundU, AS_DownDamageU))
 		return state_type::knockdown;
 
 	if (in_state_range(player, AS_DownBoundD, AS_DownDamageD))
 		return state_type::knockdown;
+
+	// Consider inputs in jumpsquat to be attempted airborne inputs
+	if (player->airborne || in_state(player, AS_KneeBend))
+		return state_type::air;
 
 	return state_type::ground;
 }
@@ -717,7 +717,7 @@ const action_type multijump = {
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		// Check for buffering repeated djs
 		return in_multijump_state(player) &&
-		       base->is_type(dj, multijump)) &&
+		       base->is_type(dj, multijump) &&
 		       frame_min(poll_delta, get_multijump_cooldown(player) - 1);
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {

@@ -131,17 +131,39 @@ namespace action_type_definitions {
 enum class state_type {
 	ground,
 	air,
-	ledge
+	ledge,
+	knockdown
 };
+
+bool in_state(const Player *player, u32 state)
+{
+	return player->action_state == state;
+}
+
+bool in_state_range(const Player *player, u32 start, u32 end)
+{
+	return player->action_state >= start && player->action_state <= end;
+}
+
+bool is_char(const Player *player, auto ...characters)
+{
+	return ((player->character_id == characters) || ...);
+}
 
 state_type get_state_type(const Player *player)
 {
-	if (player->action_state >= AS_CliffCatch && player->action_state <= AS_CliffJumpQuick2)
+	if (in_state_range(player, AS_CliffCatch, AS_CliffJumpQuick2))
 		return state_type::ledge;
 
 	// Consider inputs in jumpsquat to be attempted airborne inputs
 	if (player->action_state == AS_KneeBend || player->airborne)
 		return state_type::air;
+
+	if (in_state_range(player, AS_DownBoundU, AS_DownDamageU))
+		return state_type::knockdown;
+
+	if (in_state_range(player, AS_DownBoundD, AS_DownDamageD))
+		return state_type::knockdown;
 
 	return state_type::ground;
 }
@@ -372,6 +394,7 @@ extern const action_type dtilt;
 extern const action_type grab;
 extern const action_type airdodge;
 extern const action_type shine;
+extern const action_type shine_turn;
 
 bool is_ground_attack_base(const action_entry *action)
 {
@@ -390,7 +413,7 @@ bool is_ground_base(const action_entry *action)
 bool is_air_base(const action_entry *action)
 {
 	return action->is_type(nair, fair, bair, uair, dair,
-	                       jump, dj, airdodge);
+	                       jump, dj);
 }
 
 bool frame_min(size_t poll_delta, size_t min)
@@ -526,10 +549,10 @@ const action_type slow_dashback = {
 		return action->is_type(slow_dashback, turn, pivot);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		const auto tilt_turn_frames = (size_t)player->char_stats.tilt_turn_frames;
+		const auto delay = (size_t)player->char_stats.tilt_turn_frames + 1;
 
 		return is_grounded(player) && base != nullptr && !base->is_type(slow_dashback) &&
-		       frame_range(poll_delta, tilt_turn_frames, tilt_turn_frames + 1);
+		       frame_range(poll_delta, delay, delay + 1);
 	},
 	.base_input_predicate = [](const Player *player, const processed_input &input,
 	                                                 const processed_input &base_input) {
@@ -614,7 +637,7 @@ const action_type jump = {
 	.name = "Jump",
 	.success_window = 4,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return is_ground_base(action) || action->is_type(shine);
+		return is_ground_base(action) || action->is_type(shine, shine_turn);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		return is_grounded(player);
@@ -638,7 +661,7 @@ const action_type dj = {
 	.name = "DJ",
 	.success_window = 4,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return is_air_base(action) || action->is_type(shine);
+		return is_air_base(action) || action->is_type(shine, shine_turn);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		return is_airborne(player);
@@ -891,8 +914,8 @@ const action_type airdodge = {
 		return new_state == AS_EscapeAir;
 	},
 	.end_predicate = [](const Player *player) {
-		return player->action_state != AS_EscapeAir &&
-		       player->action_state != AS_LandingFallSpecial;
+		return !in_state(player, AS_EscapeAir) &&
+		       !in_state(player, AS_LandingFallSpecial);
 	},
 	.input_names = { "L", "R" }
 };
@@ -903,10 +926,8 @@ const action_type shine = {
 		return is_ground_base(action) || is_air_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		if (player->character_id != CID_Fox && player->character_id != CID_Falco)
-			return false;
-
-		return is_grounded(player) || is_airborne(player);
+		return is_char(player, CID_Fox, CID_Falco) &&
+		       (is_grounded(player) || is_airborne(player));
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(check_down_b(player, input));
@@ -916,8 +937,34 @@ const action_type shine = {
 		       new_state == AS_Fox_SpecialAirLwStart;
 	},
 	.end_predicate = [](const Player *player) {
-		return player->action_state < AS_Fox_SpecialLwStart ||
-		       player->action_state > AS_Fox_SpecialAirLwTurn;
+		return !in_state_range(player, AS_Fox_SpecialLwStart, AS_Fox_SpecialAirLwTurn);
+	},
+	.input_names = { nullptr }
+};
+
+const action_type shine_turn = {
+	.name = "Shine Turn",
+	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+		// Display shine turns less than 1f after a jump input because turn takes priority
+		return action->is_type(shine, shine_turn) ||
+		       (action->is_type(jump) && frame_min(poll_delta, 1));
+	},
+	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
+		return is_char(player, CID_Fox, CID_Falco) &&
+		       !in_state(player, AS_Fox_SpecialLwEnd) &&
+		       !in_state(player, AS_Fox_SpecialAirLwEnd) &&
+		       base != nullptr && base->is_type(shine, shine_turn) &&
+		       frame_min(poll_delta, 3);
+	},
+	.input_predicate = [](const Player *player, const processed_input &input) {
+		return bools_to_mask(check_btilt(player, input));
+	},
+	.success_predicate = [](const Player *player, s32 new_state) {
+		return new_state == AS_Fox_SpecialLwTurn ||
+		       new_state == AS_Fox_SpecialAirLwTurn;
+	},
+	.end_predicate = [](const Player *player) {
+		return !in_state_range(player, AS_Fox_SpecialLwStart, AS_Fox_SpecialAirLwTurn);
 	},
 	.input_names = { nullptr }
 };
@@ -933,6 +980,7 @@ static const action_type *action_types[] = {
 	&action_type_definitions::squat,
 	&action_type_definitions::dash,
 	&action_type_definitions::dashback,
+	&action_type_definitions::slow_dashback,
 	&action_type_definitions::jump,
 	&action_type_definitions::dj,
 	&action_type_definitions::nair,
@@ -948,7 +996,8 @@ static const action_type *action_types[] = {
 	&action_type_definitions::dtilt,
 	&action_type_definitions::grab,
 	&action_type_definitions::airdodge,
-	&action_type_definitions::shine
+	&action_type_definitions::shine,
+	&action_type_definitions::shine_turn
 };
 
 constexpr auto action_type_count = std::extent_v<decltype(action_types)>;
@@ -981,18 +1030,20 @@ static void detect_action_for_input(const Player *player, const processed_input 
 		const auto *action = action_buffer.head(offset);
 		const auto poll_delta = poll_index - action->poll_index;
 
-		if (action->type->must_succeed && !action->success)
+		if (type.plinkable && !plinked && action->is_type(type)) {
+			// Check if this is the 2nd input in a plink
+			plinked = poll_delta <= PLINK_WINDOW * Si.poll.y;
+			continue;
+		}
+
+		// Don't use previous inputs of a plinked action as a base
+		if (plinked && action->is_type(type))
 			continue;
 
 		if (base == nullptr && type.is_base_action != nullptr) {
 			// Count the 2nd input in a plink even if the base action ended
 			if (type.is_base_action(action, poll_delta) && (action->active || plinked))
 				base = action;
-		}
-
-		if (type.plinkable && !plinked && action->type == &type) {
-			// Check if this is the 2nd input in a plink
-			plinked = poll_delta <= PLINK_WINDOW * Si.poll.y;
 		}
 	}
 

@@ -31,7 +31,7 @@ constexpr size_t ACTION_HISTORY = 10;
 // Frame window to consider a duplicate action input a plink
 constexpr size_t PLINK_WINDOW = 3;
 // Frame window to consider actions to be intended one after another
-constexpr size_t ACT_OUT_WINDOW = 5;
+constexpr size_t ACT_OUT_WINDOW = 3;
 
 struct saved_input {
 	u8 qwrite;

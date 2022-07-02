@@ -65,6 +65,8 @@ struct processed_input {
 	}
 };
 
+struct action_entry;
+
 struct action_type {
 	const char *name;
 	// If true, can only happen if a base action is found
@@ -80,16 +82,16 @@ struct action_type {
 	// How many frames to still consider action active after end_predicate returns true
 	unsigned int end_delay;
 	// Check whether a previous action is a suitable base action (relative timing to) for this
-	bool(*is_base_action)(const struct action_entry *action, size_t poll_delta);
+	bool(*is_base_action)(const action_entry *action, size_t poll_delta);
 	// Predicate to detect prerequisite player state for this action (before PlayerThink_Input)
-	bool(*state_predicate)(const Player *player, const struct action_entry *base,
+	bool(*state_predicate)(const Player *player, const action_entry *base,
 	                                             size_t poll_delta);
 	// Predicate to detect inputs that trigger this action (before PlayerThink_Input)
 	// Returns 0 or an arbitrary mask corresponding to the input method (e.g. X/Y/Up for jump)
 	int(*input_predicate)(const Player *player, const processed_input &input);
-	// Like input_predicate, but receives input from base action.
+	// Like input_predicate, but receives base action.
 	int(*base_input_predicate)(const Player *player, const processed_input &input,
-	                                                 const processed_input &base_input);
+	                           const action_entry *base);
 	// Predicate to detect whether the action succeeded (after PlayerThink_Input)
 	// new_state is AS_None if there was no AS change
 	bool(*success_predicate)(const Player *player, s32 new_state);
@@ -546,7 +548,7 @@ const action_type turn = {
 
 const action_type pivot = {
 	.name = "Pivot",
-	.success_window = 2,
+	.success_window = 3,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
 		return (is_ground_base(action) && !action->is_type(turn, pivot)) ||
 		       action->is_type(squatrv, dooc_start);
@@ -580,8 +582,8 @@ const action_type empty_pivot = {
 		return base->is_type(pivot) && frame_max(poll_delta, 2);
 	},
 	.base_input_predicate = [](const Player *player, const processed_input &input,
-	                                                 const processed_input &base_input) {
-		const auto sign = std::copysign(1.f, base_input.stick.x);
+	                           const action_entry *base) {
+		const auto sign = std::copysign(1.f, base->input.stick.x);
 		return bools_to_mask(input.stick.x * sign < plco->x_smash_threshold);
 	},
 	.success_predicate = [](const Player *player, s32 new_state) {
@@ -592,7 +594,7 @@ const action_type empty_pivot = {
 
 const action_type dash = {
 	.name = "Dash",
-	.success_window = 2,
+	.success_window = 3,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
 		return is_ground_base(action) || action->is_type(squatrv, dooc_start);
 	},
@@ -627,8 +629,8 @@ const action_type dashback = {
 		       frame_range(poll_delta, 1, 2);
 	},
 	.base_input_predicate = [](const Player *player, const processed_input &input,
-	                                                 const processed_input &base_input) {
-		const auto sign = std::copysign(1.f, base_input.stick.x);
+	                           const action_entry *base) {
+		const auto sign = std::copysign(1.f, base->input.stick.x);
 		return bools_to_mask(input.stick.x * sign >= plco->x_smash_threshold);
 	},
 	.success_predicate = [](const Player *player, s32 new_state) {
@@ -654,9 +656,9 @@ const action_type slow_dashback = {
 		return is_grounded(player) && !base->is_type(slow_dashback) &&
 		       frame_range(poll_delta, delay, delay + 1);
 	},
-	.base_input_predicate = [](const Player *player, const processed_input &input,
-	                                                 const processed_input &base_input) {
-		const auto sign = std::copysign(1.f, base_input.stick.x);
+	.base_input_predicate = [](const Player *player,     const processed_input &input,
+	                           const action_entry *base) {
+		const auto sign = std::copysign(1.f, base->input.stick.x);
 		return bools_to_mask(input.stick.x * sign >= plco->x_smash_threshold);
 	},
 	.success_predicate = [](const Player *player, s32 new_state) {
@@ -765,10 +767,11 @@ const action_type squatrv = {
 	.name = "Uncrouch",
 	.needs_base = true,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return action->is_type(squatwait, squatrv, dash, pivot, dooc_start);
+		return action->is_type(squatwait, dooc_start, squatrv, dash, pivot);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return !base->is_type(squatrv, dash, pivot);
+		return in_state_range(player, AS_Squat, AS_SquatRv) &&
+		       !base->is_type(squatrv, dash, pivot);
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(input.stick.y > -plco->max_squatwait_threshold);
@@ -784,22 +787,29 @@ const action_type squatrv = {
 
 const action_type dooc_start = {
 	.name = "DOOC Start",
-	.needs_base = true,
 	.hidden = true,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return true;
+		return action->is_type(dooc_start, squatrv);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return base->is_type(squat, squatwait);
+		return in_state(player, AS_Squat, AS_SquatWait) &&
+		       (base == nullptr || !base->is_type(squatrv));
 	},
-	.input_predicate = [](const Player *player, const processed_input &input) {
-		return bools_to_mask(input.stick.x >= plco->deadzone.x);
+	.base_input_predicate = [](const Player *player, const processed_input &input,
+	                           const action_entry *base) {
+		if (get_stick_x_hold_time(player, input) >= 3)
+			return 0;
+		else if (base != nullptr)
+			return bools_to_mask(input.stick.x * base->input.stick.x < 0);
+		else
+			return bools_to_mask(input.stick.x != 0);
 	},
 	.success_predicate = [](const Player *player, s32 new_state) {
-		return true;
+		return false;
 	},
 	.end_predicate = [](const Player *player) {
-		return !in_state_range(player, AS_Squat, AS_SquatRv);
+		return !in_state_range(player, AS_Squat, AS_SquatRv) ||
+		       player->input.stick_x_hold_time >= 3;
 	},
 	.input_names = { nullptr }
 };
@@ -1295,8 +1305,8 @@ static void detect_action_for_input(const Player *player, const processed_input 
 	if (type.input_predicate != nullptr)
 		mask |= type.input_predicate(player, input);
 
-	if (type.base_input_predicate != nullptr && base != nullptr)
-		mask |= type.base_input_predicate(player, input, base->input);
+	if (type.base_input_predicate != nullptr)
+		mask |= type.base_input_predicate(player, input, base);
 
 	// Don't detect the same inputs for the same action repeatedly in one frame
 	mask &= ~detected_inputs[type_index];
@@ -1415,7 +1425,9 @@ EVENT_HANDLER(events::player::think::input::post, [](Player *player, u32 old_sta
 				action->active = !type->must_succeed;
 				action->confirmed = true;
 			}
-		} else if (action->active && type->end_predicate != nullptr) {
+		}
+
+		if (action->active && type->end_predicate != nullptr) {
 			// Check if action can still be used as base
 			if (action->end_timer == 0) {
 				if (type->end_predicate(player))

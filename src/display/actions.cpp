@@ -774,11 +774,11 @@ const action_type squatrv = {
 	.name = "Uncrouch",
 	.needs_base = true,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return action->is_type(squatwait, dooc_start, squatrv, dash, pivot);
+		return action->is_type(squatwait, dooc_start, squatrv, dash, dashback, pivot);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		return in_state_range(player, AS_Squat, AS_SquatRv) &&
-		       !base->is_type(squatrv, dash, pivot);
+		       !base->is_type(squatrv, dash, dashback, pivot);
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(input.stick.y > -plco->max_squatwait_threshold);
@@ -796,11 +796,11 @@ const action_type dooc_start = {
 	.name = "DOOC Start",
 	.hidden = true,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return action->is_type(dooc_start, squatrv);
+		return action->is_type(dooc_start, squatrv, dash, pivot);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		return in_state(player, AS_Squat, AS_SquatWait) &&
-		       (base == nullptr || !base->is_type(squatrv));
+		       (base == nullptr || !base->is_type(squatrv, dash, pivot));
 	},
 	.base_input_predicate = [](const Player *player, const processed_input &input,
 	                           const action_entry *base) {
@@ -851,7 +851,7 @@ const action_type dj = {
 		return is_air_base(action) || action->is_type(shine, shine_turn);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return is_airborne(player, base) && !in_multijump_state(player) &&
+		return is_airborne(player) && !in_multijump_state(player) &&
 		       player->jumps_used < player->char_stats.jumps;
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {

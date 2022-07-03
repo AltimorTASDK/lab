@@ -134,6 +134,47 @@ struct action_entry {
 
 namespace action_type_definitions {
 
+extern const action_type turn;
+extern const action_type pivot;
+extern const action_type dash;
+extern const action_type dashback;
+extern const action_type slow_dashback;
+extern const action_type run;
+extern const action_type runbrake;
+extern const action_type squat;
+extern const action_type squatwait;
+extern const action_type squatrv;
+extern const action_type dooc_start;
+extern const action_type jump;
+extern const action_type dj;
+extern const action_type multijump;
+extern const action_type nair;
+extern const action_type fair;
+extern const action_type bair;
+extern const action_type uair;
+extern const action_type dair;
+extern const action_type fsmash;
+extern const action_type usmash;
+extern const action_type dsmash;
+extern const action_type ftilt;
+extern const action_type utilt;
+extern const action_type dtilt;
+extern const action_type grab;
+extern const action_type airdodge;
+extern const action_type shine;
+extern const action_type shine_turn;
+extern const action_type side_b;
+extern const action_type up_b;
+extern const action_type down_b;
+extern const action_type neutral_b;
+extern const action_type cliffcatch;
+extern const action_type cliffwait;
+extern const action_type ledgeattack;
+extern const action_type ledgeroll;
+extern const action_type ledgejump;
+extern const action_type ledgestand;
+extern const action_type ledgefall;
+
 enum class state_type {
 	ground,
 	air,
@@ -174,8 +215,11 @@ bool in_multijump_state(const Player *player)
 	return is_multijump_state(player, player->action_state);
 }
 
-state_type get_state_type(const Player *player)
+state_type get_state_type(const Player *player, const action_entry *base)
 {
+	if (base != nullptr && base->is_type(jump, ledgefall))
+		return state_type::air;
+
 	if (in_state_range(player, AS_CliffCatch, AS_CliffJumpQuick2))
 		return state_type::ledge;
 
@@ -192,9 +236,18 @@ state_type get_state_type(const Player *player)
 	return state_type::ground;
 }
 
-bool is_on_ledge(const Player *player) { return get_state_type(player) == state_type::ledge;  }
-bool is_grounded(const Player *player) { return get_state_type(player) == state_type::ground; }
-bool is_airborne(const Player *player) { return get_state_type(player) == state_type::air;    }
+bool is_on_ledge(const Player *player, const action_entry *base = nullptr)
+{
+	return get_state_type(player, base) == state_type::ledge;
+}
+bool is_grounded(const Player *player, const action_entry *base = nullptr)
+{
+	return get_state_type(player, base) == state_type::ground;
+}
+bool is_airborne(const Player *player, const action_entry *base = nullptr)
+{
+	return get_state_type(player, base) == state_type::air;
+}
 
 int get_stick_x_hold_time(const Player *player, const processed_input &input)
 {
@@ -368,14 +421,15 @@ bool check_dtilt_instant(const Player *player, const processed_input &input)
 	       player->input.stick.y > plco->dtilt_threshold;
 }
 
-special_type check_special(const Player *player, const processed_input &input)
+special_type check_special(const Player *player, const processed_input &input,
+                           const action_entry *base)
 {
 	if (!(input.pressed & Button_B))
 		return special_type::none;
 
 	const auto crouch = in_state(player, AS_SquatWait, AS_SquatRv);
 
-	if (is_grounded(player)) {
+	if (is_grounded(player, base)) {
 		if (std::abs(input.stick.x) >= plco->x_special_threshold && !crouch)
 			return special_type::side;
 		if (input.stick.y >= plco->y_special_threshold)
@@ -384,7 +438,7 @@ special_type check_special(const Player *player, const processed_input &input)
 			return special_type::down;
 		if (input.stick.y > -plco->y_special_threshold && !crouch)
 			return special_type::neutral;
-	} else if (is_airborne(player)) {
+	} else if (is_airborne(player, base)) {
 		if (input.stick.y >= plco->y_special_threshold)
 			return special_type::up;
 		if (input.stick.y <= -plco->y_special_threshold)
@@ -396,26 +450,6 @@ special_type check_special(const Player *player, const processed_input &input)
 	}
 
 	return special_type::none;
-}
-
-bool check_side_b(const Player *player, const processed_input &input)
-{
-	return check_special(player, input) == special_type::side;
-}
-
-bool check_up_b(const Player *player, const processed_input &input)
-{
-	return check_special(player, input) == special_type::up;
-}
-
-bool check_down_b(const Player *player, const processed_input &input)
-{
-	return check_special(player, input) == special_type::down;
-}
-
-bool check_neutral_b(const Player *player, const processed_input &input)
-{
-	return check_special(player, input) == special_type::neutral;
 }
 
 int check_aerial(const Player *player, const processed_input &input)
@@ -457,40 +491,6 @@ int check_aerial(const Player *player, const processed_input &input)
 		return stick.x * player->direction > 0 ? AS_AttackAirF : AS_AttackAirB;
 }
 
-extern const action_type turn;
-extern const action_type pivot;
-extern const action_type dash;
-extern const action_type dashback;
-extern const action_type slow_dashback;
-extern const action_type run;
-extern const action_type runbrake;
-extern const action_type squat;
-extern const action_type squatwait;
-extern const action_type squatrv;
-extern const action_type dooc_start;
-extern const action_type jump;
-extern const action_type dj;
-extern const action_type multijump;
-extern const action_type nair;
-extern const action_type fair;
-extern const action_type bair;
-extern const action_type uair;
-extern const action_type dair;
-extern const action_type fsmash;
-extern const action_type usmash;
-extern const action_type dsmash;
-extern const action_type ftilt;
-extern const action_type utilt;
-extern const action_type dtilt;
-extern const action_type grab;
-extern const action_type airdodge;
-extern const action_type shine;
-extern const action_type shine_turn;
-extern const action_type side_b;
-extern const action_type up_b;
-extern const action_type down_b;
-extern const action_type neutral_b;
-
 bool is_ground_base(const action_entry *action)
 {
 	return action->is_type(turn, pivot, dash, dashback, slow_dashback, run, runbrake, squat,
@@ -505,7 +505,14 @@ bool is_air_base(const action_entry *action)
 {
 	return action->is_type(nair, fair, bair, uair, dair,
 	                       jump, dj, multijump,
-	                       side_b, up_b, down_b, neutral_b);
+	                       side_b, up_b, down_b, neutral_b,
+	                       ledgefall);
+}
+
+bool is_ledge_base(const action_entry *action)
+{
+	return action->is_type(cliffcatch, cliffwait,
+	                       ledgeattack, ledgeroll, ledgejump, ledgestand, ledgefall);
 }
 
 bool frame_min(size_t poll_delta, auto min)
@@ -844,7 +851,7 @@ const action_type dj = {
 		return is_air_base(action) || action->is_type(shine, shine_turn);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return is_airborne(player) && !in_multijump_state(player) &&
+		return is_airborne(player, base) && !in_multijump_state(player) &&
 		       player->jumps_used < player->char_stats.jumps;
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
@@ -914,7 +921,7 @@ const action_type aerial = {
 						return false;
 			}
 		}
-		return is_airborne(player);
+		return is_airborne(player, base);
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(check_aerial(player, input) == state);
@@ -1112,7 +1119,7 @@ const action_type airdodge = {
 		return is_air_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return (base != nullptr && base->is_type(jump)) || is_airborne(player);
+		return (base != nullptr && base->is_type(jump)) || is_airborne(player, base);
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(input.pressed & Button_L,
@@ -1135,10 +1142,11 @@ const action_type shine = {
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		return is_char(player, CID_Fox, CID_Falco) &&
-		       (is_grounded(player) || is_airborne(player));
+		       (is_grounded(player) || is_airborne(player, base));
 	},
-	.input_predicate = [](const Player *player, const processed_input &input) {
-		return bools_to_mask(check_down_b(player, input));
+	.base_input_predicate = [](const Player *player, const processed_input &input,
+	                                                 const action_entry *base) {
+		return bools_to_mask(check_special(player, input, base) == special_type::down);
 	},
 	.success_predicate = [](const Player *player, s32 new_state) {
 		return new_state == AS_Fox_SpecialLwStart ||
@@ -1189,10 +1197,11 @@ const action_type special = {
 		if (type == special_type::down && is_char(player, CID_Fox, CID_Falco))
 			return false;
 
-		return is_grounded(player) || is_airborne(player);
+		return is_grounded(player, base) || is_airborne(player, base);
 	},
-	.input_predicate = [](const Player *player, const processed_input &input) {
-		return bools_to_mask(check_special(player, input) == type);
+	.base_input_predicate = [](const Player *player, const processed_input &input,
+	                                                 const action_entry *base) {
+		return bools_to_mask(check_special(player, input, base) == type);
 	},
 	.success_predicate = [](const Player *player, s32 new_state) {
 		return check_special_state(player, new_state) == type;
@@ -1207,6 +1216,156 @@ const action_type side_b    = special<"Side B",    special_type::side>;
 const action_type up_b      = special<"Up B",      special_type::up>;
 const action_type down_b    = special<"Down B",    special_type::down>;
 const action_type neutral_b = special<"Neutral B", special_type::neutral>;
+
+const action_type cliffcatch = {
+	.name = "Cliff Catch",
+	.must_succeed = true,
+	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+		return action->is_type(ledgefall, cliffcatch);
+	},
+	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
+		if (base != nullptr && base->is_type(cliffcatch))
+			return false;
+
+		if (in_state(player, AS_CliffCatch))
+			return true;
+
+		return base != nullptr && base->is_type(ledgefall) &&
+		       frame_min(poll_delta, plco->ledge_regrab_timer);
+	},
+	.base_input_predicate = [](const Player *player, const processed_input &input,
+	                                                 const action_entry *base) {
+		return bools_to_mask(in_state(player, AS_CliffCatch) ||
+		                     input.stick.y > -plco->pass_ledge_threshold);
+	},
+	.success_predicate = [](const Player *player, s32 new_state) {
+		return in_state(player, AS_CliffCatch);
+	},
+	.end_predicate = [](const Player *player) {
+		return !in_state_range(player, AS_CliffCatch, AS_CliffJumpQuick2);
+	},
+	.input_names = { nullptr }
+};
+
+const action_type cliffwait = {
+	.name = "Cliff Wait",
+	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+		return false;
+	},
+	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
+		return false;
+	},
+	.input_predicate = [](const Player *player, const processed_input &input) {
+		return 0;
+	},
+	.success_predicate = [](const Player *player, s32 new_state) {
+		return false;
+	},
+	.end_predicate = [](const Player *player) {
+		return false;
+	},
+	.input_names = { nullptr }
+};
+
+const action_type ledgeattack = {
+	.name = "Ledge Attack",
+	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+		return false;
+	},
+	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
+		return false;
+	},
+	.input_predicate = [](const Player *player, const processed_input &input) {
+		return 0;
+	},
+	.success_predicate = [](const Player *player, s32 new_state) {
+		return false;
+	},
+	.end_predicate = [](const Player *player) {
+		return false;
+	},
+	.input_names = { nullptr }
+};
+
+const action_type ledgeroll = {
+	.name = "Ledge Roll",
+	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+		return false;
+	},
+	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
+		return false;
+	},
+	.input_predicate = [](const Player *player, const processed_input &input) {
+		return 0;
+	},
+	.success_predicate = [](const Player *player, s32 new_state) {
+		return false;
+	},
+	.end_predicate = [](const Player *player) {
+		return false;
+	},
+	.input_names = { nullptr }
+};
+
+const action_type ledgejump = {
+	.name = "Ledge Jump",
+	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+		return false;
+	},
+	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
+		return false;
+	},
+	.input_predicate = [](const Player *player, const processed_input &input) {
+		return 0;
+	},
+	.success_predicate = [](const Player *player, s32 new_state) {
+		return false;
+	},
+	.end_predicate = [](const Player *player) {
+		return false;
+	},
+	.input_names = { nullptr }
+};
+
+const action_type ledgestand = {
+	.name = "Ledge Stand",
+	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+		return false;
+	},
+	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
+		return false;
+	},
+	.input_predicate = [](const Player *player, const processed_input &input) {
+		return 0;
+	},
+	.success_predicate = [](const Player *player, s32 new_state) {
+		return false;
+	},
+	.end_predicate = [](const Player *player) {
+		return false;
+	},
+	.input_names = { nullptr }
+};
+
+const action_type ledgefall = {
+	.name = "Ledge Fall",
+	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+		return false;
+	},
+	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
+		return false;
+	},
+	.input_predicate = [](const Player *player, const processed_input &input) {
+		return 0;
+	},
+	.success_predicate = [](const Player *player, s32 new_state) {
+		return false;
+	},
+	.end_predicate = [](const Player *player) {
+		return false;
+	},
+	.input_names = { nullptr }
+};
 
 } // action_type_definitions
 
@@ -1223,9 +1382,9 @@ static const action_type *action_types[] = {
 	&action_type_definitions::squat,
 	&action_type_definitions::squatwait,
 	&action_type_definitions::squatrv,
-	&action_type_definitions::jump,
 	&action_type_definitions::dj,
 	&action_type_definitions::multijump,
+	&action_type_definitions::jump,
 	&action_type_definitions::nair,
 	&action_type_definitions::fair,
 	&action_type_definitions::bair,
@@ -1245,6 +1404,15 @@ static const action_type *action_types[] = {
 	&action_type_definitions::side_b,
 	&action_type_definitions::up_b,
 	&action_type_definitions::down_b,
+	&action_type_definitions::cliffcatch,
+#if 0
+	&action_type_definitions::cliffwait,
+	&action_type_definitions::ledgeattack,
+	&action_type_definitions::ledgeroll,
+	&action_type_definitions::ledgejump,
+	&action_type_definitions::ledgestand,
+	&action_type_definitions::ledgefall,
+#endif
 };
 
 constexpr auto action_type_count = std::extent_v<decltype(action_types)>;

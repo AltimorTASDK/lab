@@ -10,6 +10,9 @@ HOOK(GObj_RenderAll, [&]()
 {
 	original();
 
+	if (ImGui::GetCurrentContext() == nullptr)
+		return;
+
 	ImGui_ImplGC_NewFrame();
 	ImGui_ImplGX_NewFrame();
 	ImGui::NewFrame();

@@ -1,7 +1,8 @@
+#include "melee/scene.h"
 #include "imgui/events.h"
-#include "util/hooks.h"
 #include "imgui/backends/imgui_impl_gc.h"
 #include "imgui/backends/imgui_impl_gx.h"
+#include "util/hooks.h"
 #include <imgui.h>
 
 extern "C" void HSD_ResetScene();
@@ -15,6 +16,12 @@ HOOK(HSD_ResetScene, [&]()
 	}
 
 	original();
+
+	if (SceneMajor != Scene_VsMode && SceneMajor != Scene_Training)
+		return;
+
+	if (SceneMinor != VsScene_Game)
+		return;
 
 	ImGui::CreateContext();
 	ImGui_ImplGC_Init();

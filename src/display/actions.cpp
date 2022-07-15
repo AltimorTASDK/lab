@@ -1643,9 +1643,9 @@ EVENT_HANDLER(events::imgui::draw, []()
 		ImGui::TableNextColumn();
 
 		if (action->success)
-			ImGui::TextColored({.2f, 1.f, .2f, 1.f}, "✔");
+			ImGui::TextColored({0.2f, 1.f, 0.2f, 1.f}, "✔");
 		else
-			ImGui::TextColored({1.f, .2f, .2f, 1.f}, "❌");
+			ImGui::TextColored({1.f, 0.2f, 0.2f, 1.f}, "❌");
 
 		ImGui::SameLine();
 

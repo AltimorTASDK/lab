@@ -1,5 +1,5 @@
-#include "os/serial.h"
-#include "os/vi.h"
+#include "dolphin/serial.h"
+#include "dolphin/vi.h"
 #include "console/console.h"
 #include "console/cvar.h"
 #include "input/poll.h"

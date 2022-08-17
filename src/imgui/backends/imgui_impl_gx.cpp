@@ -1,10 +1,10 @@
 // dear imgui: Renderer Backend for GameCube GX
 // This needs to be used along with the GC Backend
 
-#include "os/gx.h"
+#include "dolphin/gx.h"
+#include "imgui/backends/imgui_impl_gx.h"
 #include "util/math.h"
 #include "util/draw/render.h"
-#include "imgui/backends/imgui_impl_gx.h"
 #include <ogc/cache.h>
 #include <ogc/gx.h>
 #include <imgui.h>

@@ -1,4 +1,4 @@
-#include "os/os.h"
+#include "dolphin/os.h"
 #include "hsd/cobj.h"
 #include "hsd/gobj.h"
 #include "hsd/video.h"

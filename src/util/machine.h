@@ -1,7 +1,7 @@
 #pragma once
 
-#include "os/context.h"
-#include "os/os.h"
+#include "dolphin/context.h"
+#include "dolphin/os.h"
 #include "util/preprocessor.h"
 #include <ogc/machine/asm.h>
 

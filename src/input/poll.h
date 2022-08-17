@@ -1,6 +1,6 @@
 #pragma once
 
-#include "os/serial.h"
+#include "dolphin/serial.h"
 #include "event/event.h"
 
 constexpr auto MAX_POLLS_PER_FRAME = 32;

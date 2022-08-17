@@ -1,11 +1,11 @@
 // dear imgui: Platform Backend for Nintendo GameCube
 // This needs to be used along with the GX Renderer.
 
-#include "os/serial.h"
+#include "dolphin/serial.h"
 #include "hsd/pad.h"
-#include "util/vector.h"
 #include "imgui/events.h"
 #include "imgui/backends/imgui_impl_gc.h"
+#include "util/vector.h"
 #include <imgui.h>
 
 struct ImGui_ImplGC_Pad {

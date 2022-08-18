@@ -120,7 +120,7 @@ $(PATCHES): $(DOLELF)
 	@[ -d $(@D) ] || mkdir -p $(@D)
 	$(OBJCOPY) -O binary -j .patches $< $@
 
-$(DOLELF): $(OBJFILES) $(DOLDATA) $(DOLLD) $(MELEELD) $(BASEMOD)/../common.ld
+$(DOLELF): $(OBJFILES) $(DOLDATA) $(DOLLD) $(MELEELD)
 	@[ -d $(@D) ] || mkdir -p $(@D)
 	$(CC) $(LDFLAGS) -T$(DOLLD) -T$(MELEELD) $(OBJFILES) $(STATICLIBS) -o $@
 

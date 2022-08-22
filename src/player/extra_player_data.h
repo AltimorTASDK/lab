@@ -2,18 +2,32 @@
 
 #include "melee/player.h"
 
+namespace extra_player_data_detail {
+inline size_t match_number;
+} // extra_player_data_detail
+
 template<typename T>
 class extra_player_data {
-	T data[12];
+	mutable T data[12];
+	mutable size_t match_number;
 
 public:
-	T *get(const Player *player)
+	const T *get(const Player *player) const
 	{
+		if (match_number != extra_player_data_detail::match_number) {
+			// New match started, reset data
+			for (auto &elem : data)
+				new (&elem) T;
+
+			match_number = extra_player_data_detail::match_number;
+		}
+
 		return &data[player->slot * 2 + player->is_backup_climber];
 	}
 
-	const T *get(const Player *player) const
+	T *get(const Player *player)
 	{
-		return &data[player->slot * 2 + player->is_backup_climber];
+		return const_cast<T*>(const_cast<const extra_player_data&>(*this).get(player));
 	}
+
 };

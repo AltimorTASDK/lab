@@ -20,6 +20,7 @@
 #include "util/melee/character.h"
 #include "util/melee/ftcmd.h"
 #include "util/melee/pad.h"
+#include <bit>
 #include <imgui.h>
 #include <ogc/machine/asm.h>
 #include <tuple>
@@ -1219,27 +1220,14 @@ const action_type neutral_b = special<"Neutral B", special_type::neutral>;
 
 const action_type cliffcatch = {
 	.name = "Cliff Catch",
-	.must_succeed = true,
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return action->is_type(ledgefall, cliffcatch);
+		return action->is_type(cliffcatch);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		if (base != nullptr && base->is_type(cliffcatch))
-			return false;
-
-		if (in_state(player, AS_CliffCatch))
-			return true;
-
-		return base != nullptr && base->is_type(ledgefall) &&
-		       frame_min(poll_delta, plco->ledge_regrab_timer);
-	},
-	.base_input_predicate = [](const Player *player, const processed_input &input,
-	                                                 const action_entry *base) {
-		return bools_to_mask(in_state(player, AS_CliffCatch) ||
-		                     input.stick.y > -plco->pass_ledge_threshold);
+		return base == nullptr && in_state(player, AS_CliffCatch);
 	},
 	.success_predicate = [](const Player *player, s32 new_state) {
-		return in_state(player, AS_CliffCatch);
+		return true;
 	},
 	.end_predicate = [](const Player *player) {
 		return !in_state_range(player, AS_CliffCatch, AS_CliffJumpQuick2);
@@ -1250,19 +1238,16 @@ const action_type cliffcatch = {
 const action_type cliffwait = {
 	.name = "Cliff Wait",
 	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return false;
+		return action->is_type(cliffwait);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return false;
-	},
-	.input_predicate = [](const Player *player, const processed_input &input) {
-		return 0;
+		return base == nullptr && in_state(player, AS_CliffWait);
 	},
 	.success_predicate = [](const Player *player, s32 new_state) {
-		return false;
+		return true;
 	},
 	.end_predicate = [](const Player *player) {
-		return false;
+		return !in_state_range(player, AS_CliffCatch, AS_CliffJumpQuick2);
 	},
 	.input_names = { nullptr }
 };
@@ -1486,7 +1471,7 @@ static void detect_action_for_input(const Player *player, const processed_input 
 
 	// Add the action multiple times if triggered multiple times in one poll
 	while (mask != 0) {
-		const auto input_type = __builtin_ctz(mask);
+		const auto input_type = std::countr_zero(mask);
 		mask &= ~(1 << input_type);
 
 		action_buffer.add({

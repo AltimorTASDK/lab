@@ -926,6 +926,7 @@ const action_type dj = {
 			"X", "Y", "Up"
 		}[action->input_type];
 
+		// Display jump trajectory during ledgedashes
 		if (action->base_action != nullptr && action->base_action->is_type(ledgefall)) {
 			format_coord(action->final_input.stick.x * action->direction, printer);
 			printer(" %s", input);

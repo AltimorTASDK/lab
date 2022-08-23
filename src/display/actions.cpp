@@ -85,7 +85,7 @@ struct action_type {
 	// Automatically add this action when this state is entered
 	u32 on_action_state = AS_None;
 	// Check whether a previous action is a suitable base action (relative timing to) for this
-	bool(*is_base_action)(const action_entry *action, size_t poll_delta);
+	bool(*is_base_action)(const action_entry *action);
 	// Predicate to detect prerequisite player state for this action (before PlayerThink_Input)
 	bool(*state_predicate)(const Player *player, const action_entry *base,
 	                                             size_t poll_delta);
@@ -492,6 +492,38 @@ int check_aerial(const Player *player, const processed_input &input)
 		return stick.x * player->direction > 0 ? AS_AttackAirF : AS_AttackAirB;
 }
 
+bool check_ledge_deadzone(const vec2 &stick)
+{
+	return std::abs(stick.x) < plco->ledge_deadzone &&
+	       std::abs(stick.y) < plco->ledge_deadzone;
+}
+
+bool check_ledge_deadzone_frame(const Player *player)
+{
+	return check_ledge_deadzone(player->input.stick) &&
+	       check_ledge_deadzone(player->input.cstick);
+}
+
+bool check_ledgefall(const Player *player, const vec2 &stick)
+{
+	if (check_ledge_deadzone(stick))
+		return false;
+	if (stick.x * player->direction >= 0)
+		return get_stick_angle_abs_x(stick) < -plco->angle_50d;
+	else
+		return get_stick_angle_abs_x(stick) < plco->angle_50d;
+}
+
+bool check_ledgestand(const Player *player, const vec2 &stick)
+{
+	if (check_ledge_deadzone(stick))
+		return false;
+	if (stick.x * player->direction >= 0)
+		return get_stick_angle_abs_x(stick) >= -plco->angle_50d;
+	else
+		return get_stick_angle_abs_x(stick) >= plco->angle_50d;
+}
+
 bool is_ground_base(const action_entry *action)
 {
 	return action->is_type(turn, pivot, dash, dashback, slow_dashback, run, runbrake, squat,
@@ -512,8 +544,7 @@ bool is_air_base(const action_entry *action)
 
 bool is_ledge_base(const action_entry *action)
 {
-	return action->is_type(cliffcatch, cliffwait,
-	                       ledgeattack, ledgeroll, ledgejump, ledgestand, ledgefall);
+	return action->is_type(cliffcatch, cliffwait, ledgefall);
 }
 
 bool frame_min(size_t poll_delta, auto min)
@@ -535,7 +566,7 @@ const action_type turn = {
 	.name = "Turn",
 	.must_succeed = true,
 	.success_window = 2,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return is_ground_base(action) && !action->is_type(turn, pivot);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -557,7 +588,7 @@ const action_type turn = {
 const action_type pivot = {
 	.name = "Pivot",
 	.success_window = 3,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return (is_ground_base(action) && !action->is_type(turn, pivot)) ||
 		       action->is_type(squatrv, dooc_start);
 	},
@@ -582,7 +613,7 @@ const action_type pivot = {
 const action_type empty_pivot = {
 	.name = "Empty Pivot",
 	.needs_base = true,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return !action->is_type(dashback, slow_dashback);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -603,7 +634,7 @@ const action_type empty_pivot = {
 const action_type dash = {
 	.name = "Dash",
 	.success_window = 3,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return is_ground_base(action) || action->is_type(squatrv, dooc_start);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -629,7 +660,7 @@ const action_type dashback = {
 	.needs_base = true,
 	.must_succeed = true,
 	.success_window = 2,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return action->is_type(dashback, turn, pivot);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -655,7 +686,7 @@ const action_type slow_dashback = {
 	.needs_base = true,
 	.must_succeed = true,
 	.success_window = 2,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return action->is_type(slow_dashback, turn, pivot);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -682,7 +713,7 @@ const action_type run = {
 	.name = "Run",
 	.needs_base = true,
 	.success_window = 2,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return true;
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -705,7 +736,7 @@ const action_type run = {
 const action_type runbrake = {
 	.name = "Run Brake",
 	.needs_base = true,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return action->is_type(run);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -728,7 +759,7 @@ const action_type runbrake = {
 const action_type squat = {
 	.name = "Crouch",
 	.needs_base = true,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return action->is_type(runbrake, squat);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -748,7 +779,7 @@ const action_type squat = {
 
 const action_type squatwait = {
 	.name = "Full Crouch",
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return action->is_type(squat, squatwait, dooc_start);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -774,7 +805,7 @@ const action_type squatwait = {
 const action_type squatrv = {
 	.name = "Uncrouch",
 	.needs_base = true,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return action->is_type(squatwait, dooc_start, squatrv, dash, dashback, pivot);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -796,7 +827,7 @@ const action_type squatrv = {
 const action_type dooc_start = {
 	.name = "DOOC Start",
 	.hidden = true,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return action->is_type(dooc_start, squatrv, dash, pivot);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -825,7 +856,7 @@ const action_type dooc_start = {
 const action_type jump = {
 	.name = "Jump",
 	.success_window = 4,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return is_ground_base(action) || action->is_type(shine, shine_turn);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -848,7 +879,7 @@ const action_type jump = {
 const action_type dj = {
 	.name = "DJ",
 	.success_window = 4,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return is_air_base(action) || action->is_type(shine, shine_turn);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -876,7 +907,7 @@ const action_type multijump = {
 	.name = "DJ",
 	.needs_base = true,
 	.success_window = 4,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return true;
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -904,7 +935,7 @@ template<string_literal name, s32 state>
 const action_type aerial = {
 	.name = name.value,
 	.end_delay = ACT_OUT_WINDOW,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		if (state == AS_AttackAirHi && action->is_type(usmash))
 				return true;
 
@@ -945,7 +976,7 @@ const action_type dair = aerial<"Dair", AS_AttackAirLw>;
 const action_type fsmash = {
 	.name = "FSmash",
 	.end_delay = ACT_OUT_WINDOW,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return is_ground_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -971,7 +1002,7 @@ const action_type fsmash = {
 const action_type usmash = {
 	.name = "USmash",
 	.end_delay = ACT_OUT_WINDOW,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return is_ground_base(action) || action->is_type(jump);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -996,7 +1027,7 @@ const action_type usmash = {
 const action_type dsmash = {
 	.name = "DSmash",
 	.end_delay = ACT_OUT_WINDOW,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return is_ground_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -1021,7 +1052,7 @@ const action_type dsmash = {
 const action_type ftilt = {
 	.name = "FTilt",
 	.end_delay = ACT_OUT_WINDOW,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return is_ground_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -1046,7 +1077,7 @@ const action_type ftilt = {
 const action_type utilt = {
 	.name = "UTilt",
 	.end_delay = ACT_OUT_WINDOW,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return is_ground_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -1070,7 +1101,7 @@ const action_type utilt = {
 const action_type dtilt = {
 	.name = "DTilt",
 	.end_delay = ACT_OUT_WINDOW,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return is_ground_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -1094,7 +1125,7 @@ const action_type dtilt = {
 const action_type grab = {
 	.name = "Grab",
 	.end_delay = ACT_OUT_WINDOW,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return is_ground_base(action) || action->is_type(jump);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -1116,7 +1147,7 @@ const action_type airdodge = {
 	.name = "Air Dodge",
 	.plinkable = true,
 	.end_delay = ACT_OUT_WINDOW,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return is_air_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -1138,7 +1169,7 @@ const action_type airdodge = {
 
 const action_type shine = {
 	.name = "Shine",
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return is_ground_base(action) || is_air_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -1162,17 +1193,16 @@ const action_type shine = {
 const action_type shine_turn = {
 	.name = "Shine Turn",
 	.needs_base = true,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		// Display shine turns less than 1f after a jump input because turn takes priority
-		return action->is_type(shine, shine_turn) ||
-		       (action->is_type(jump) && frame_min(poll_delta, 1));
+		return action->is_type(shine, shine_turn, jump);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		return is_char(player, CID_Fox, CID_Falco) &&
 		       !in_state(player, AS_Fox_SpecialLwEnd) &&
 		       !in_state(player, AS_Fox_SpecialAirLwEnd) &&
-		       base->is_type(shine, shine_turn) &&
-		       frame_min(poll_delta, 3);
+		       ((base->is_type(jump) && frame_min(poll_delta, 1)) ||
+		        (base->is_type(shine, shine_turn) && frame_min(poll_delta, 3)));
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(check_btilt(player, input));
@@ -1191,7 +1221,7 @@ template<string_literal name, special_type type>
 const action_type special = {
 	.name = name.value,
 	.end_delay = ACT_OUT_WINDOW,
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return is_ground_base(action) || is_air_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -1221,38 +1251,56 @@ const action_type neutral_b = special<"Neutral B", special_type::neutral>;
 const action_type cliffcatch = {
 	.name = "Cliff Catch",
 	.on_action_state = AS_CliffCatch,
+	.end_predicate = [](const Player *player) {
+		return !in_state(player, AS_CliffCatch);
+	},
 	.input_names = { nullptr }
 };
 
 const action_type cliffwait = {
 	.name = "Cliff Wait",
-	.on_action_state = AS_CliffWait,
+	.needs_base = true,
+	.is_base_action = [](const action_entry *action) {
+		return action->is_type(cliffcatch, cliffwait);
+	},
+	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
+		return !base->is_type(cliffwait) && in_state(player, AS_CliffWait);
+	},
+	.input_predicate = [](const Player *player, const processed_input &input) {
+		return bools_to_mask(true);
+	},
+	.success_predicate = [](const Player *player, s32 new_state) {
+		return true;
+	},
+	.end_predicate = [](const Player *player) {
+		return !is_on_ledge(player);
+	},
 	.input_names = { nullptr }
 };
 
 const action_type ledgeattack = {
 	.name = "Ledge Attack",
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return false;
+	.is_base_action = [](const action_entry *action) {
+		return is_ledge_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return false;
+		return is_on_ledge(player, base);
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
-		return 0;
+		const auto threshold = plco->ledge_attack_cstick_threshold;
+		return bools_to_mask(
+			input.pressed & (Button_A | Button_B),
+			input.cstick.y >= threshold && player->input.cstick.y < threshold);
 	},
 	.success_predicate = [](const Player *player, s32 new_state) {
-		return false;
-	},
-	.end_predicate = [](const Player *player) {
-		return false;
+		return in_state(player, AS_CliffAttackSlow, AS_CliffAttackQuick);
 	},
 	.input_names = { nullptr }
 };
 
 const action_type ledgeroll = {
 	.name = "Ledge Roll",
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return false;
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -1272,7 +1320,7 @@ const action_type ledgeroll = {
 
 const action_type ledgejump = {
 	.name = "Ledge Jump",
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return false;
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -1292,7 +1340,7 @@ const action_type ledgejump = {
 
 const action_type ledgestand = {
 	.name = "Ledge Stand",
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
+	.is_base_action = [](const action_entry *action) {
 		return false;
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
@@ -1312,22 +1360,23 @@ const action_type ledgestand = {
 
 const action_type ledgefall = {
 	.name = "Ledge Fall",
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return false;
+	.is_base_action = [](const action_entry *action) {
+		return is_ledge_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return false;
+		return is_on_ledge(player, base) && check_ledge_deadzone_frame(player);
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
-		return 0;
+		return bools_to_mask(check_ledgefall(player, input.stick),
+		                     check_ledgefall(player, input.cstick));
 	},
 	.success_predicate = [](const Player *player, s32 new_state) {
-		return false;
+		return in_state(player, AS_Fall);
 	},
 	.end_predicate = [](const Player *player) {
-		return false;
+		return !is_airborne(player);
 	},
-	.input_names = { nullptr }
+	.input_names = { nullptr, nullptr }
 };
 
 } // action_type_definitions
@@ -1369,18 +1418,17 @@ static const action_type *action_types[] = {
 	&action_type_definitions::down_b,
 	&action_type_definitions::cliffcatch,
 	&action_type_definitions::cliffwait,
-#if 0
 	&action_type_definitions::ledgeattack,
 	&action_type_definitions::ledgeroll,
 	&action_type_definitions::ledgejump,
 	&action_type_definitions::ledgestand,
 	&action_type_definitions::ledgefall,
-#endif
 };
 
 constexpr auto action_type_count = std::extent_v<decltype(action_types)>;
 static ring_buffer<saved_input, INPUT_BUFFER_SIZE> input_buffer[4];
 static ring_buffer<action_entry, ACTION_BUFFER_SIZE> action_buffer;
+static size_t last_action_poll[action_type_count];
 
 EVENT_HANDLER(events::input::poll, [](s32 chan, const SIPadStatus &status)
 {
@@ -1388,34 +1436,44 @@ EVENT_HANDLER(events::input::poll, [](s32 chan, const SIPadStatus &status)
 		input_buffer[chan].add({ .qwrite = HSD_PadLibData.qwrite, .status = status });
 });
 
+struct action_detect_data {
+	u32 detected_inputs;
+	size_t bases_checked;
+	const action_entry *base;
+};
+
 static void detect_action_for_input(const Player *player, const processed_input &input,
-                                    size_t poll_index, size_t type_index, u32 *detected_inputs)
+                                    size_t poll_index, size_t type_index, action_detect_data *data)
 {
 	const auto &type = *action_types[type_index];
 
-	const action_entry *base = nullptr;
-	auto plinked = false;
+	const action_entry *base = data->base;
+
+	const auto plink_delta = poll_index - last_action_poll[type_index];
+	const auto plinked = type.plinkable && plink_delta <= PLINK_WINDOW * Si.poll.y;
 
 	// Find base action in buffer
-	for (size_t offset = 0; offset < action_buffer.stored(); offset++) {
-		const auto *action = action_buffer.head(offset);
-		const auto poll_delta = poll_index - action->poll_index;
+	if (type.is_base_action != nullptr) {
+		const auto unchecked = action_buffer.count() - data->bases_checked;
+		const auto max_offset = std::min(unchecked, action_buffer.stored());
 
-		if (type.plinkable && !plinked && action->is_type(type)) {
-			// Check if this is the 2nd input in a plink
-			plinked = poll_delta <= PLINK_WINDOW * Si.poll.y;
-			continue;
-		}
+		for (size_t offset = 0; offset < max_offset; offset++) {
+			const auto *action = action_buffer.head(offset);
 
-		// Don't use previous inputs of a plinked action as a base
-		if (plinked && action->is_type(type))
-			continue;
+			// Don't use previous inputs of a plinked action as a base
+			if (plinked && action->is_type(type))
+				continue;
 
-		if (base == nullptr && type.is_base_action != nullptr) {
 			// Count the 2nd input in a plink even if the base action ended
-			if (type.is_base_action(action, poll_delta) && (action->active || plinked))
+			if ((action->active || plinked) && type.is_base_action(action)) {
 				base = action;
+				break;
+			}
 		}
+
+		// Cache for next time
+		data->base = base;
+		data->bases_checked = action_buffer.count();
 	}
 
 	// Check if type requires base action
@@ -1439,12 +1497,13 @@ static void detect_action_for_input(const Player *player, const processed_input 
 		mask |= type.base_input_predicate(player, input, base);
 
 	// Don't detect the same inputs for the same action repeatedly in one frame
-	mask &= ~detected_inputs[type_index];
+	mask &= ~data->detected_inputs;
 
 	if (mask == 0)
 		return;
 
-	detected_inputs[type_index] |= mask;
+	data->detected_inputs |= mask;
+	last_action_poll[type_index] = poll_index;
 
 	// Add the action multiple times if triggered multiple times in one poll
 	while (mask != 0) {
@@ -1503,13 +1562,23 @@ static std::tuple<size_t, size_t> find_polls_for_frame(u8 port)
 	return std::make_tuple(start_index, end_index);
 }
 
+#warning debug
+static double ms(u64 start)
+{
+	const auto time = OSGetTime() - start;
+	const auto bus_speed = *(volatile u32*)0x800000F8;
+	return (double)time / ((double)bus_speed / 4000.0);
+}
+
 EVENT_HANDLER(events::player::think::input::pre, [](Player *player)
 {
 	if (Player_IsCPU(player) || !player->update_inputs)
 		return;
 
-	// Store masks for which input types were detected for each action type
-	u32 detected_inputs[action_type_count] = { 0 };
+	const auto start_time = OSGetTime();
+
+	// Store persistent data for detecting each action type
+	action_detect_data detect_data[action_type_count] = { 0 };
 
 	auto [start_index, end_index] = find_polls_for_frame(player->port);
 
@@ -1523,9 +1592,11 @@ EVENT_HANDLER(events::player::think::input::pre, [](Player *player)
 
 		for (size_t type_index = 0; type_index < action_type_count; type_index++) {
 			detect_action_for_input(player, processed, poll_index, type_index,
-			                        detected_inputs);
+			                        &detect_data[type_index]);
 		}
 	}
+
+	OSReport("took %.04f\n", ms(start_time));
 });
 
 EVENT_HANDLER(events::player::think::input::post, [](Player *player, u32 old_state, u32 new_state)

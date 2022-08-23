@@ -118,6 +118,10 @@ struct action_entry {
 	processed_input input;
 	// Final input from the frame this action was performed on
 	PlayerInput final_input;
+	// Player direction from frame this action was performed on
+	float direction;
+	// Set when above two fields are initialized
+	bool final_input_set;
 	// How many frames until action becomes inactive
 	unsigned int end_timer;
 	// Whether this can still be used as a valid base action
@@ -568,6 +572,17 @@ bool frame_range(size_t poll_delta, auto min, auto max)
 	return frame_min(poll_delta, min) && frame_max(poll_delta, max);
 }
 
+void format_coord(float coord, action_type::printer *printer) {
+	if (coord == 0.f)
+		printer("  0.0");
+	else if (coord == 1.f)
+		printer("  1.0");
+	else if (coord == -1.f)
+		printer(" -1.0");
+	else
+		printer("%5.0f", coord * 10000);
+}
+
 const action_type turn = {
 	.name = "Turn",
 	.must_succeed = true,
@@ -889,7 +904,7 @@ const action_type dj = {
 		return is_air_base(action) || action->is_type(shine, shine_turn);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return is_airborne(player) && !in_multijump_state(player) &&
+		return is_airborne(player, base) && !in_multijump_state(player) &&
 		       player->jumps_used < player->char_stats.jumps;
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
@@ -906,7 +921,18 @@ const action_type dj = {
 	.end_predicate = [](const Player *player) {
 		return !is_airborne(player);
 	},
-	.input_names = { "X", "Y", "Up" }
+	.format_description = [](const action_entry *action, action_type::printer *printer) {
+		const auto *input = (const char*[]) {
+			"X", "Y", "Up"
+		}[action->input_type];
+
+		if (action->base_action != nullptr && action->base_action->is_type(ledgefall)) {
+			format_coord(action->final_input.stick.x * action->direction, printer);
+			printer(" %s", input);
+		} else {
+			printer("%s", input);
+		}
+	}
 };
 
 const action_type multijump = {
@@ -1157,7 +1183,7 @@ const action_type airdodge = {
 		return is_air_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return (base != nullptr && base->is_type(jump)) || is_airborne(player, base);
+		return is_airborne(player, base);
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(input.pressed & Button_L,
@@ -1382,7 +1408,9 @@ const action_type ledgefall = {
 		return in_state(player, AS_Fall);
 	},
 	.end_predicate = [](const Player *player) {
-		return !is_airborne(player);
+		// Show ledgedash sequence against ledgefall eaten by ledge jump
+		return !is_airborne(player) &&
+		       !in_state_range(player, AS_CliffJumpSlow1, AS_CliffJumpQuick2);
 	},
 	.input_names = { nullptr, nullptr }
 };
@@ -1611,8 +1639,11 @@ EVENT_HANDLER(events::player::think::input::post, [](Player *player, u32 old_sta
 		const auto *type = action->type;
 
 		// Store player input if the action was performed this frame
-		if (!action->confirmed && action->success_timer == 0)
+		if (!action->final_input_set) {
 			action->final_input = player->input;
+			action->direction = player->direction;
+			action->final_input_set = true;
+		}
 
 		if (!action->confirmed && type->success_predicate != nullptr) {
 			// Figure out which actions succeeded
@@ -1664,6 +1695,15 @@ EVENT_HANDLER(events::player::as_change, [](Player *player, u32 old_state, u32 n
 		return;
 	}
 });
+
+static void imgui_printer(const char *fmt, ...)
+{
+	va_list args;
+	va_start(args, fmt);
+	ImGui::TextV(fmt, args);
+	ImGui::SameLine(0, 0);
+	va_end(args);
+}
 
 EVENT_HANDLER(events::imgui::draw, []()
 {
@@ -1729,8 +1769,7 @@ EVENT_HANDLER(events::imgui::draw, []()
 			ImGui::SameLine();
 			ImGui::Text("(");
 			ImGui::SameLine(0, 0);
-			action->type->format_description(action, ImGui::Text);
-			ImGui::SameLine(0, 0);
+			action->type->format_description(action, imgui_printer);
 			ImGui::Text(")");
 		} else {
 			const auto *input_name = action->type->input_names[action->input_type];

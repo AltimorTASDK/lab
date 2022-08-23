@@ -69,6 +69,8 @@ struct processed_input {
 struct action_entry;
 
 struct action_type {
+	using printer = void(const char *fmt, ...);
+
 	const char *name;
 	// If true, can only happen if a base action is found
 	bool needs_base;
@@ -100,6 +102,8 @@ struct action_type {
 	bool(*success_predicate)(const Player *player, s32 new_state);
 	// Predicate to detect when this can no longer be used as a valid base action
 	bool(*end_predicate)(const Player *player);
+	// Show a custom formatted string instead of input_names
+	void(*format_description)(const action_entry *action, printer *printer);
 	// Array of input names corresponding to bits in mask returned by input_predicate
 	const char *input_names[];
 };
@@ -112,6 +116,8 @@ struct action_entry {
 	size_t poll_index;
 	// Input this action was detected with
 	processed_input input;
+	// Final input from the frame this action was performed on
+	PlayerInput final_input;
 	// How many frames until action becomes inactive
 	unsigned int end_timer;
 	// Whether this can still be used as a valid base action
@@ -1164,7 +1170,10 @@ const action_type airdodge = {
 		return !in_state(player, AS_EscapeAir) &&
 		       !in_state(player, AS_LandingFallSpecial);
 	},
-	.input_names = { "L", "R" }
+	.format_description = [](const action_entry *action, action_type::printer *printer) {
+		printer("%4.1f %s", get_stick_angle(action->final_input.stick) * 180 / math::pi,
+		                    action->input_type == 0 ? "L" : "R");
+	}
 };
 
 const action_type shine = {
@@ -1195,14 +1204,13 @@ const action_type shine_turn = {
 	.needs_base = true,
 	.is_base_action = [](const action_entry *action) {
 		// Display shine turns less than 1f after a jump input because turn takes priority
-		return action->is_type(shine, shine_turn, jump);
+		return action->is_type(shine, shine_turn);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
 		return is_char(player, CID_Fox, CID_Falco) &&
 		       !in_state(player, AS_Fox_SpecialLwEnd) &&
 		       !in_state(player, AS_Fox_SpecialAirLwEnd) &&
-		       ((base->is_type(jump) && frame_min(poll_delta, 1)) ||
-		        (base->is_type(shine, shine_turn) && frame_min(poll_delta, 3)));
+		       frame_min(poll_delta, 3);
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		return bools_to_mask(check_btilt(player, input));
@@ -1288,74 +1296,74 @@ const action_type ledgeattack = {
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
 		const auto threshold = plco->ledge_attack_cstick_threshold;
-		return bools_to_mask(
-			input.pressed & (Button_A | Button_B),
-			input.cstick.y >= threshold && player->input.cstick.y < threshold);
+		const auto cstick_y = input.cstick.y;
+		const auto last_cstick_y = player->input.cstick.y;
+		return bools_to_mask(input.pressed & Button_A,
+		                     input.pressed & Button_B,
+		                     cstick_y >= threshold && last_cstick_y < threshold);
 	},
 	.success_predicate = [](const Player *player, s32 new_state) {
 		return in_state(player, AS_CliffAttackSlow, AS_CliffAttackQuick);
 	},
-	.input_names = { nullptr }
+	.input_names = { nullptr, nullptr, nullptr }
 };
 
 const action_type ledgeroll = {
 	.name = "Ledge Roll",
 	.is_base_action = [](const action_entry *action) {
-		return false;
+		return is_ledge_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return false;
+		return is_on_ledge(player, base);
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
-		return 0;
+		const auto threshold = plco->ledge_roll_cstick_threshold;
+		const auto cstick_x = input.cstick.x * player->direction;
+		const auto last_cstick_x = player->input.cstick.x * player->direction;
+		return bools_to_mask(input.pressed & Button_AnalogLR,
+		                     cstick_x >= threshold && last_cstick_x < threshold);
 	},
 	.success_predicate = [](const Player *player, s32 new_state) {
-		return false;
+		return in_state(player, AS_CliffEscapeSlow, AS_CliffEscapeQuick);
 	},
-	.end_predicate = [](const Player *player) {
-		return false;
-	},
-	.input_names = { nullptr }
+	.input_names = { nullptr, nullptr }
 };
 
 const action_type ledgejump = {
 	.name = "Ledge Jump",
 	.is_base_action = [](const action_entry *action) {
-		return false;
+		return is_ledge_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return false;
+		return is_on_ledge(player, base);
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
-		return 0;
+		return bools_to_mask(input.pressed & Button_X,
+		                     input.pressed & Button_Y,
+		                     check_usmash_instant(player, input));
 	},
 	.success_predicate = [](const Player *player, s32 new_state) {
-		return false;
+		return in_state_range(player, AS_CliffJumpSlow1, AS_CliffJumpQuick2);
 	},
-	.end_predicate = [](const Player *player) {
-		return false;
-	},
-	.input_names = { nullptr }
+	.input_names = { nullptr, nullptr, nullptr }
 };
 
 const action_type ledgestand = {
 	.name = "Ledge Stand",
 	.is_base_action = [](const action_entry *action) {
-		return false;
+		return is_ledge_base(action);
 	},
 	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return false;
+		return is_on_ledge(player, base) && check_ledge_deadzone_frame(player);
 	},
 	.input_predicate = [](const Player *player, const processed_input &input) {
-		return 0;
+		return bools_to_mask(check_ledgestand(player, input.stick),
+		                     check_ledgestand(player, input.cstick));
 	},
 	.success_predicate = [](const Player *player, s32 new_state) {
-		return false;
+		return in_state(player, AS_CliffClimbSlow, AS_CliffClimbQuick);
 	},
-	.end_predicate = [](const Player *player) {
-		return false;
-	},
-	.input_names = { nullptr }
+	.input_names = { nullptr, nullptr }
 };
 
 const action_type ledgefall = {
@@ -1562,20 +1570,10 @@ static std::tuple<size_t, size_t> find_polls_for_frame(u8 port)
 	return std::make_tuple(start_index, end_index);
 }
 
-#warning debug
-static double ms(u64 start)
-{
-	const auto time = OSGetTime() - start;
-	const auto bus_speed = *(volatile u32*)0x800000F8;
-	return (double)time / ((double)bus_speed / 4000.0);
-}
-
 EVENT_HANDLER(events::player::think::input::pre, [](Player *player)
 {
 	if (Player_IsCPU(player) || !player->update_inputs)
 		return;
-
-	const auto start_time = OSGetTime();
 
 	// Store persistent data for detecting each action type
 	action_detect_data detect_data[action_type_count] = { 0 };
@@ -1595,8 +1593,6 @@ EVENT_HANDLER(events::player::think::input::pre, [](Player *player)
 			                        &detect_data[type_index]);
 		}
 	}
-
-	OSReport("took %.04f\n", ms(start_time));
 });
 
 EVENT_HANDLER(events::player::think::input::post, [](Player *player, u32 old_state, u32 new_state)
@@ -1613,6 +1609,10 @@ EVENT_HANDLER(events::player::think::input::post, [](Player *player, u32 old_sta
 			continue;
 
 		const auto *type = action->type;
+
+		// Store player input if the action was performed this frame
+		if (!action->confirmed && action->success_timer == 0)
+			action->final_input = player->input;
 
 		if (!action->confirmed && type->success_predicate != nullptr) {
 			// Figure out which actions succeeded
@@ -1683,7 +1683,6 @@ EVENT_HANDLER(events::imgui::draw, []()
 	for (size_t offset = 0; offset < max_count && displayed < ACTION_HISTORY; offset++) {
 		const auto *action = action_buffer.head(offset);
                 const auto *base_action = action->base_action;
-                const auto *input_name = action->type->input_names[action->input_type];
 
 		if (action->type->hidden)
 			continue;
@@ -1726,9 +1725,19 @@ EVENT_HANDLER(events::imgui::draw, []()
 		else
 			ImGui::TextUnformatted(action->type->name);
 
-		if (input_name != nullptr) {
+		if (action->type->format_description != nullptr) {
 			ImGui::SameLine();
-			ImGui::Text("(%s)", input_name);
+			ImGui::Text("(");
+			ImGui::SameLine(0, 0);
+			action->type->format_description(action, ImGui::Text);
+			ImGui::SameLine(0, 0);
+			ImGui::Text(")");
+		} else {
+			const auto *input_name = action->type->input_names[action->input_type];
+			if (input_name != nullptr) {
+				ImGui::SameLine();
+				ImGui::Text("(%s)", input_name);
+			}
 		}
 
 		if (base_action == nullptr) {

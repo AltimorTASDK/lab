@@ -82,6 +82,8 @@ struct action_type {
 	unsigned int success_window = 1;
 	// How many frames to still consider action active after end_predicate returns true
 	unsigned int end_delay;
+	// Automatically add this action when this state is entered
+	u32 on_action_state = AS_None;
 	// Check whether a previous action is a suitable base action (relative timing to) for this
 	bool(*is_base_action)(const action_entry *action, size_t poll_delta);
 	// Predicate to detect prerequisite player state for this action (before PlayerThink_Input)
@@ -110,8 +112,6 @@ struct action_entry {
 	size_t poll_index;
 	// Input this action was detected with
 	processed_input input;
-	// Video frame action was performed on
-	unsigned int frame;
 	// How many frames until action becomes inactive
 	unsigned int end_timer;
 	// Whether this can still be used as a valid base action
@@ -1220,35 +1220,13 @@ const action_type neutral_b = special<"Neutral B", special_type::neutral>;
 
 const action_type cliffcatch = {
 	.name = "Cliff Catch",
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return action->is_type(cliffcatch);
-	},
-	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return base == nullptr && in_state(player, AS_CliffCatch);
-	},
-	.success_predicate = [](const Player *player, s32 new_state) {
-		return true;
-	},
-	.end_predicate = [](const Player *player) {
-		return !in_state_range(player, AS_CliffCatch, AS_CliffJumpQuick2);
-	},
+	.on_action_state = AS_CliffCatch,
 	.input_names = { nullptr }
 };
 
 const action_type cliffwait = {
 	.name = "Cliff Wait",
-	.is_base_action = [](const action_entry *action, size_t poll_delta) {
-		return action->is_type(cliffwait);
-	},
-	.state_predicate = [](const Player *player, const action_entry *base, size_t poll_delta) {
-		return base == nullptr && in_state(player, AS_CliffWait);
-	},
-	.success_predicate = [](const Player *player, s32 new_state) {
-		return true;
-	},
-	.end_predicate = [](const Player *player) {
-		return !in_state_range(player, AS_CliffCatch, AS_CliffJumpQuick2);
-	},
+	.on_action_state = AS_CliffWait,
 	.input_names = { nullptr }
 };
 
@@ -1390,8 +1368,8 @@ static const action_type *action_types[] = {
 	&action_type_definitions::up_b,
 	&action_type_definitions::down_b,
 	&action_type_definitions::cliffcatch,
-#if 0
 	&action_type_definitions::cliffwait,
+#if 0
 	&action_type_definitions::ledgeattack,
 	&action_type_definitions::ledgeroll,
 	&action_type_definitions::ledgejump,
@@ -1403,7 +1381,6 @@ static const action_type *action_types[] = {
 constexpr auto action_type_count = std::extent_v<decltype(action_types)>;
 static ring_buffer<saved_input, INPUT_BUFFER_SIZE> input_buffer[4];
 static ring_buffer<action_entry, ACTION_BUFFER_SIZE> action_buffer;
-static unsigned int draw_frames;
 
 EVENT_HANDLER(events::input::poll, [](s32 chan, const SIPadStatus &status)
 {
@@ -1453,7 +1430,7 @@ static void detect_action_for_input(const Player *player, const processed_input 
 	}
 
 	// Don't detect the same inputs for the same action repeatedly in one frame
-	auto mask = 0;
+	auto mask = 0u;
 
 	if (type.input_predicate != nullptr)
 		mask |= type.input_predicate(player, input);
@@ -1479,7 +1456,6 @@ static void detect_action_for_input(const Player *player, const processed_input 
 			.base_action = base,
 			.poll_index  = poll_index,
 			.input       = input,
-			.frame       = draw_frames,
 			.active      = !type.must_succeed,
 			.input_type  = (u8)input_type,
 			.port        = player->port
@@ -1529,7 +1505,7 @@ static std::tuple<size_t, size_t> find_polls_for_frame(u8 port)
 
 EVENT_HANDLER(events::player::think::input::pre, [](Player *player)
 {
-	if (Player_IsCPU(player))
+	if (Player_IsCPU(player) || !player->update_inputs)
 		return;
 
 	// Store masks for which input types were detected for each action type
@@ -1554,7 +1530,7 @@ EVENT_HANDLER(events::player::think::input::pre, [](Player *player)
 
 EVENT_HANDLER(events::player::think::input::post, [](Player *player, u32 old_state, u32 new_state)
 {
-	if (Player_IsCPU(player))
+	if (Player_IsCPU(player) || !player->update_inputs)
 		return;
 
 	const auto port = player->port;
@@ -1567,7 +1543,7 @@ EVENT_HANDLER(events::player::think::input::post, [](Player *player, u32 old_sta
 
 		const auto *type = action->type;
 
-		if (!action->confirmed) {
+		if (!action->confirmed && type->success_predicate != nullptr) {
 			// Figure out which actions succeeded
 			if (!performed_action && type->success_predicate(player, new_state)) {
 				action->active = true;
@@ -1589,6 +1565,32 @@ EVENT_HANDLER(events::player::think::input::post, [](Player *player, u32 old_sta
 				action->active = false;
 			}
 		}
+	}
+});
+
+EVENT_HANDLER(events::player::as_change, [](Player *player, u32 old_state, u32 new_state)
+{
+	for (const auto *type : action_types) {
+		if (type->on_action_state != new_state)
+			continue;
+
+		const auto [start_index, end_index] = find_polls_for_frame(player->port);
+
+		// Treat collision/damage state changes as being at the end of the frame
+		const auto poll_index = curr_gobjproc == nullptr ||
+		                        curr_gobjproc->s_link <= SLink_Input ? start_index
+		                                                             : end_index + 1;
+
+		action_buffer.add({
+			.type        = type,
+			.poll_index  = poll_index,
+			.active      = true,
+			.confirmed   = true,
+			.success     = true,
+			.port        = player->port
+		});
+
+		return;
 	}
 });
 
@@ -1668,8 +1670,6 @@ EVENT_HANDLER(events::imgui::draw, []()
 
 	ImGui::EndTable();
 	ImGui::End();
-
-	draw_frames++;
 });
 
 EVENT_HANDLER(events::match::exit, []()

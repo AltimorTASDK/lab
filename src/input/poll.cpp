@@ -25,8 +25,13 @@ static console::cvar<int> polling_mult("polling_mult", {
 HOOK(SI_SetXY, [&](u16 line, u8 cnt)
 {
 	// Change poll interval so the middle poll happens when it would on vanilla
-	const auto mult = std::min(cnt * polling_mult.get(), MAX_POLLS_PER_FRAME) / cnt;
-	original((u16)(line / mult), (u8)(cnt * mult));
+	const auto new_cnt = (u8)std::min(cnt * polling_mult.get(), MAX_POLLS_PER_FRAME);
+	const auto progressive = vi_regs->viclk.s != 0;
+
+	if (progressive)
+		original((u16)(525 / new_cnt), new_cnt);
+	else
+		original((u16)(525 / new_cnt / 2), new_cnt);
 });
 
 HOOK(SI_GetResponseRaw, [&](s32 chan)

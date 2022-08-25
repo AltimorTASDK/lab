@@ -1198,8 +1198,10 @@ const action_type airdodge = {
 		       !in_state(player, AS_LandingFallSpecial);
 	},
 	.format_description = [](const action_entry *action, action_type::printer *printer) {
-		printer("%4.1f %s", get_stick_angle(action->final_input.stick) * 180 / math::pi,
-		                    action->input_type == 0 ? "L" : "R");
+		if (action->final_input.stick != vec2::zero)
+			printer("%4.1f ", rad_to_deg(get_stick_angle(action->final_input.stick)));
+
+		printer("%s", action->input_type == 0 ? "L" : "R");
 	}
 };
 

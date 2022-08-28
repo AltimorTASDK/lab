@@ -1593,10 +1593,8 @@ static std::tuple<size_t, size_t> find_polls_for_frame(u8 port)
 		}
 	}
 
-	if (end_index == invalid_index) {
-		OSReport("Failed to find polls corresponding to current frame\n");
+	if (end_index == invalid_index)
 		return std::make_tuple(1, 0);
-	}
 
 	return std::make_tuple(start_index, end_index);
 }

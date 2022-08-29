@@ -1566,7 +1566,7 @@ static std::tuple<size_t, size_t> find_polls_for_frame(u8 port)
 	const auto &buffer = input_buffer[port];
 
 	// Only use polls corresponding to this frame
-	const auto queue_index = mod(HSD_PadLibData.qread - 1, PAD_QNUM);
+	const auto queue_index = decrement_mod((int)HSD_PadLibData.qread, PAD_QNUM);
 
 	// Head index must be saved because the interrupt can change it
 	const auto head_index = buffer.head_index();

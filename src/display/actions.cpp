@@ -1617,7 +1617,7 @@ EVENT_HANDLER(events::player::think::input::pre, [](Player *player)
 
 		const auto processed = processed_input(player, input->status);
 
-		for (size_t type_index = 0; type_index < action_type_count; type_index++) {
+		for (auto type_index = 0zu; type_index < action_type_count; type_index++) {
 			detect_action_for_input(player, processed, poll_index, type_index,
 			                        &detect_data[type_index]);
 		}

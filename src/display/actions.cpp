@@ -7,6 +7,7 @@
 #include "melee/player.h"
 #include "melee/subaction.h"
 #include "melee/characters/fox.h"
+#include "melee/scene.h"
 #include "console/console.h"
 #include "match/events.h"
 #include "imgui/events.h"
@@ -1599,9 +1600,15 @@ static std::tuple<size_t, size_t> find_polls_for_frame(u8 port)
 	return std::make_tuple(start_index, end_index);
 }
 
+static bool should_ignore_inputs(const Player *player)
+{
+	return player->ignore_input || player->no_update || player->stamina_dead ||
+	       Player_IsCPU(player) || Scene_CheckPauseFlag(PauseBit_TrainingMenu);
+}
+
 EVENT_HANDLER(events::player::think::input::pre, [](Player *player)
 {
-	if (Player_IsCPU(player) || !player->update_inputs)
+	if (should_ignore_inputs(player))
 		return;
 
 	// Store persistent data for detecting each action type
@@ -1626,7 +1633,7 @@ EVENT_HANDLER(events::player::think::input::pre, [](Player *player)
 
 EVENT_HANDLER(events::player::think::input::post, [](Player *player, u32 old_state, u32 new_state)
 {
-	if (Player_IsCPU(player) || !player->update_inputs)
+	if (should_ignore_inputs(player))
 		return;
 
 	const auto port = player->port;

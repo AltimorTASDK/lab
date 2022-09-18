@@ -22,7 +22,7 @@ public:
 			match_number = extra_player_data_detail::match_number;
 		}
 
-		return &data[player->slot * 2 + player->is_backup_climber];
+		return &data[player->slot * 2 + player->is_secondary_char];
 	}
 
 	T *get(const Player *player)

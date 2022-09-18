@@ -46,7 +46,7 @@ private:
 	cvar_base *next;
 
 public:
-	const unsigned int name_hash;
+	const hash_t name_hash;
 	const char *const name;
 
 protected:

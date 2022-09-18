@@ -2,6 +2,8 @@
 
 #include "util/meta.h"
 
+using hash_t = unsigned int;
+
 namespace fnv1a {
 constexpr auto offset_basis = 0x811C9DC5u;
 constexpr auto prime        = 0x01000193u;
@@ -9,7 +11,7 @@ constexpr auto prime        = 0x01000193u;
 
 // Consteval FNV1a hash
 template<string_literal str>
-consteval unsigned int hash()
+consteval hash_t hash()
 {
 	auto hash = fnv1a::offset_basis;
 
@@ -22,7 +24,7 @@ consteval unsigned int hash()
 
 // Consteval FNV1a hash
 template<size_t size>
-consteval unsigned int hash(const char (&str)[size])
+consteval hash_t hash(const char (&str)[size])
 {
 	auto hash = fnv1a::offset_basis;
 
@@ -34,7 +36,7 @@ consteval unsigned int hash(const char (&str)[size])
 }
 
 // Runtime FNV1a hash
-inline unsigned int hash(const char *str)
+inline hash_t hash(const char *str)
 {
 	auto hash = fnv1a::offset_basis;
 

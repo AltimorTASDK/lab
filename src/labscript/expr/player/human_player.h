@@ -7,27 +7,17 @@
 namespace labscript::expr {
 
 struct human_player : expression {
-	hash_t get_hash() override
+	hash_t get_hash() const override
 	{
 		return hash<"human_player">();
 	}
 
-	const char *get_name() override
-	{
-		return "Human Player";
-	}
-
-	const char *get_description() override
-	{
-		return "Get the human player with the lowest port.";
-	}
-
-	type get_type() override
+	type get_type() const override
 	{
 		return type::player;
 	}
 
-	result execute(void *result) override
+	result execute(void *result) const override
 	{
 		Player *player = nullptr;
 
@@ -42,5 +32,7 @@ struct human_player : expression {
 		return result::ok;
 	}
 };
+
+LABSCRIPT_EXPR_TYPE(human_player, "Human Player", "Get the human player with the lowest port.");
 
 } // namespace labscript::expr
